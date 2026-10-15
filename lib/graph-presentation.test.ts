@@ -149,4 +149,13 @@ describe("graphSelectionReveal", () => {
       assert.deepEqual(graphSelectionReveal(elapsed, true), { edgeProgress: 1, showTooltip: true });
     }
   });
+
+  it("keeps showTooltip as the selection info gate while hover edges share the same progress", () => {
+    // 선택 정보창만 showTooltip으로 열고, hover 연결선은 edgeProgress만 쓴다.
+    const mid = graphSelectionReveal(120);
+    assert.equal(mid.showTooltip, false);
+    assert.ok(mid.edgeProgress > 0 && mid.edgeProgress < 1);
+    assert.equal(graphSelectionReveal(GRAPH_EDGE_REVEAL_MS).showTooltip, true);
+    assert.equal(graphSelectionReveal(GRAPH_EDGE_REVEAL_MS).edgeProgress, 1);
+  });
 });
