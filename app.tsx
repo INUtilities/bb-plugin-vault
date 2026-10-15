@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import {
-  Markdown,
   definePluginApp,
   experimental_SourceCode as SourceCode,
   useBbNavigate,
@@ -18,6 +17,7 @@ import { withPanelSplash } from "@/components/PanelSplash";
 import { useAgentSnapshot } from "@/components/use-agent-entry";
 import { VaultFileDirective, VaultGraphDirective } from "@/components/VaultDirective";
 import { DocViewToggle, type DocViewMode } from "@/components/DocViewToggle";
+import { MathMarkdown } from "@/components/MathMarkdown";
 import { DocumentEndSpace } from "@/components/DocumentEndSpace";
 import { FrontmatterPanel, PropertiesDock, PropertiesSheet, readFrontmatterOpen, storeFrontmatterOpen } from "@/components/FrontmatterPanel";
 import { ImagePreview } from "@/components/ImagePreview";
@@ -1029,7 +1029,7 @@ function DocsReaderPanel({
               ) : doc.kind === "markdown" && viewMode === "preview" ? (
                 <div className={cn("flex w-full justify-center px-4 pt-6 sm:px-8 sm:pt-8", COARSE_POINTER_MARKDOWN_BODY_CLASS)}>
                   <div className="w-full min-w-0 max-w-prose" onClickCapture={onWikiClick}>
-                    <Markdown content={markdown.body} />
+                    <MathMarkdown content={markdown.body} />
                   </div>
                 </div>
               ) : doc.kind === "markdown" || doc.kind === "html" || doc.kind === "text" ? (
