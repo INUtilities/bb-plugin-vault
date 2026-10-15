@@ -40,6 +40,7 @@ import {
   type CalloutRect,
 } from "@/lib/graph-callouts";
 import { agentMarkGlow, graphLabelHidden, graphNodeEmphasis, highlightedNodeIndices } from "@/lib/graph-highlight";
+import { graphNodeHitRadius } from "@/lib/graph-hit";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const THEME_STYLE_ID = "bb-app-theme";
@@ -765,11 +766,11 @@ export function GraphView({
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     }
     function hit(point: Point) {
-      // 겹친 노트는 가까운 쪽을 선택하고, 터치는 더 넓은 영역을 허용한다.
+      // hover·클릭이 같은 판정을 쓰고, 겹친 노트는 가까운 쪽을 고른다.
       for (let i = order.length - 1; i >= 0; i--) {
         const index = order[i];
         const node = projected[index];
-        if (node?.visible && Math.hypot(node.x - point.x, node.y - point.y) <= Math.max(radius(index) + 3, largeHit ? 22 : 12)) return index;
+        if (node?.visible && Math.hypot(node.x - point.x, node.y - point.y) <= graphNodeHitRadius(radius(index), largeHit)) return index;
       }
       return -1;
     }
