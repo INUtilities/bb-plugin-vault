@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import {
-  Markdown,
   definePluginApp,
   experimental_SourceCode as SourceCode,
   useBbNavigate,
@@ -18,6 +17,7 @@ import { withPanelSplash } from "@/components/PanelSplash";
 import { useAgentSnapshot } from "@/components/use-agent-entry";
 import { VaultFileDirective, VaultGraphDirective } from "@/components/VaultDirective";
 import { DocViewToggle, type DocViewMode } from "@/components/DocViewToggle";
+import { MathMarkdown } from "@/components/MathMarkdown";
 import { DocumentEndSpace } from "@/components/DocumentEndSpace";
 import { FrontmatterPanel, PropertiesDock, PropertiesSheet, readFrontmatterOpen, storeFrontmatterOpen } from "@/components/FrontmatterPanel";
 import { ImagePreview } from "@/components/ImagePreview";
@@ -53,6 +53,7 @@ import { readSessionRoute, writeSessionRoute } from "@/lib/session-route";
 import { rewriteVaultMarkdown } from "@/lib/vault-markdown";
 import { graphCornerCursor, graphCornerResize } from "@/lib/graph-corner";
 import type { GraphEdge, GraphNode } from "@/lib/note-graph";
+import { joinPreviewUrl } from "@/lib/preview-url";
 import { parseVaultLinkHref } from "@/lib/wiki-links";
 import type { rpcContract } from "./server";
 
@@ -1017,16 +1018,18 @@ function DocsReaderPanel({
             ) : (
             <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
               {doc.kind === "html" && viewMode === "preview" ? (
-                <iframe
-                  title={doc.name}
-                  sandbox=""
-                  srcDoc={doc.content}
-                  className="m-4 h-full min-h-[24rem] w-[calc(100%-2rem)] rounded-md border border-border bg-background"
-                />
+                previewBaseUrl !== null ? (
+                  <iframe
+                    title={doc.name}
+                    sandbox="allow-scripts"
+                    src={joinPreviewUrl(previewBaseUrl, doc.path)}
+                    className="m-4 h-full min-h-[24rem] w-[calc(100%-2rem)] rounded-md border border-border bg-background"
+                  />
+                ) : null
               ) : doc.kind === "markdown" && viewMode === "preview" ? (
                 <div className={cn("flex w-full justify-center px-4 pt-6 sm:px-8 sm:pt-8", COARSE_POINTER_MARKDOWN_BODY_CLASS)}>
                   <div className="w-full min-w-0 max-w-prose" onClickCapture={onWikiClick}>
-                    <Markdown content={markdown.body} />
+                    <MathMarkdown content={markdown.body} />
                   </div>
                 </div>
               ) : doc.kind === "markdown" || doc.kind === "html" || doc.kind === "text" ? (

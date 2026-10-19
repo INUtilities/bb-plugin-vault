@@ -40,6 +40,7 @@ import {
   type CalloutRect,
 } from "@/lib/graph-callouts";
 import { agentMarkGlow, graphLabelHidden, graphNodeEmphasis, highlightedNodeIndices } from "@/lib/graph-highlight";
+import { graphNodeHitRadius } from "@/lib/graph-hit";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const THEME_STYLE_ID = "bb-app-theme";
@@ -606,15 +607,15 @@ export function GraphView({
         for (const edge of focusedEdges) line(edge, selected, selection.edgeProgress);
         ctx!.stroke();
       }
-      const hoverProgress = hover < 0 || motionPreference.matches ? 1 : clamp((time - hoverStarted) / GRAPH_EDGE_REVEAL_MS, 0, 1);
-      const hoverAnimating = hoverEdges.length > 0 && hoverProgress < 1;
+      const hoverReveal = graphSelectionReveal(time - hoverStarted, motionPreference.matches);
+      const hoverProgress = hover < 0 ? 1 : hoverReveal.edgeProgress;
+      const hoverAnimating = hoverEdges.length > 0 && hover !== selected && !hoverReveal.showTooltip;
       if (hoverEdges.length > 0 && hover !== selected) {
         // 기존 선택 간선은 유지하고 hover한 점에서 이웃 쪽으로 강조를 덧그린다.
-        const progress = 1 - (1 - hoverProgress) ** 3;
         ctx!.globalAlpha = 0.65;
         ctx!.strokeStyle = palette.selected;
         ctx!.beginPath();
-        for (const edge of hoverEdges) line(edge, hover, progress);
+        for (const edge of hoverEdges) line(edge, hover, hoverProgress);
         ctx!.stroke();
       }
       for (const index of order) {
@@ -675,11 +676,12 @@ export function GraphView({
       ctx!.globalAlpha = 1;
       ctx!.font = "12px ui-sans-serif, system-ui, sans-serif";
       ctx!.textBaseline = "middle";
+      // 선택 콜아웃 자리를 비워 두어 hover 이름이 HTML 정보창에 가려지지 않게 한다.
       const occupied: CalloutRect[] = infoRectRef.current ? [infoRectRef.current] : [];
       const shownLabels = new Set<number>();
       let labelsAnimating = false;
       function label(index: number) {
-        if (graphLabelHidden(index, infoIndex, selected)) return;
+        if (graphLabelHidden(index, infoIndex, selected, hover)) return;
         const point = projected[index];
         let text = labelText.get(index);
         if (!text) {
@@ -739,7 +741,12 @@ export function GraphView({
       }
       // 드래그·관성 중에는 이름표를 생략해 프레임이 밀리지 않게 한다.
       if (!gliding) {
-        for (const index of closest) label(index);
+        // hover 이름을 먼저 배치해 선택 콜아웃·가까운 노트 라벨보다 자리를 우선한다.
+        if (hover >= 0) label(hover);
+        for (const index of closest) {
+          if (index === hover) continue;
+          label(index);
+        }
         for (const index of labelStarts.keys()) {
           if (!shownLabels.has(index)) labelStarts.delete(index);
         }
@@ -759,11 +766,11 @@ export function GraphView({
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     }
     function hit(point: Point) {
-      // 겹친 노트는 가까운 쪽을 선택하고, 터치는 더 넓은 영역을 허용한다.
+      // hover·클릭이 같은 판정을 쓰고, 겹친 노트는 가까운 쪽을 고른다.
       for (let i = order.length - 1; i >= 0; i--) {
         const index = order[i];
         const node = projected[index];
-        if (node?.visible && Math.hypot(node.x - point.x, node.y - point.y) <= Math.max(radius(index) + 3, largeHit ? 22 : 12)) return index;
+        if (node?.visible && Math.hypot(node.x - point.x, node.y - point.y) <= graphNodeHitRadius(radius(index), largeHit)) return index;
       }
       return -1;
     }
