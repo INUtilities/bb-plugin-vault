@@ -28,7 +28,7 @@ Requires [bb](https://getbb.app) with a compatible Plugin SDK (`engines` in `pac
 From a clone:
 
 ```bash
-git clone https://github.com/HIJKM/bb-plugin-vault.git
+git clone https://github.com/INUtilities/bb-plugin-vault.git
 cd bb-plugin-vault
 bb plugin install . --yes
 ```
@@ -36,7 +36,7 @@ bb plugin install . --yes
 Or from GitHub:
 
 ```bash
-bb plugin install 'git:https://github.com/HIJKM/bb-plugin-vault.git@main' --yes
+bb plugin install 'git:https://github.com/INUtilities/bb-plugin-vault.git@main' --yes
 ```
 
 Plugin id: `vault`.
