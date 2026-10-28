@@ -10,6 +10,7 @@ import {
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
+import * as Dialog from "@radix-ui/react-dialog";
 
 import { BrandIcon } from "@/components/BrandIcon";
 import { GraphView } from "@/components/GraphView";
@@ -316,7 +317,8 @@ function childrenOf(entries: readonly DocEntry[], folder: string): DocEntry[] {
 function DocsReaderPanel({
   subPath,
   onRoute,
-}: PluginNavPanelProps & { onRoute?: (subPath: string) => void }) {
+  surface = "nav",
+}: PluginNavPanelProps & { onRoute?: (subPath: string) => void; surface?: "nav" | "panel" }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const chrome = useVaultChrome();
@@ -514,7 +516,9 @@ function DocsReaderPanel({
   const [previewBaseUrl, setPreviewBaseUrl] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<DocViewMode>("preview");
   const [graphOpen, setGraphOpen] = useState(false);
-  const [graphPeek, setGraphPeek] = useState(true);
+  const [graphPeek, setGraphPeek] = useState(surface !== "panel");
+  const [panelTreeOpen, setPanelTreeOpen] = useState(false);
+  const panelGraphOpen = graphOpen;
   const [propsOpen, setPropsOpen] = useState(readFrontmatterOpen);
   const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set());
   const [graph, setGraph] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
@@ -851,12 +855,12 @@ function DocsReaderPanel({
         onQueryChange={setQuery}
         filterFocusTick={filterFocusTick}
         graphOpen={graphPeek}
-        onOpenGraph={stacked ? () => setGraphOpen(true) : undefined}
-        onToggleGraph={stacked ? undefined : () => setGraphPeek((open) => !open)}
+        onOpenGraph={surface === "panel" ? undefined : stacked ? () => setGraphOpen(true) : undefined}
+        onToggleGraph={surface === "panel" || stacked ? undefined : () => setGraphPeek((open) => !open)}
         vaults={vaults}
         vaultId={vaultId}
         onSelectVault={(id) => goTo(id, "")}
-        className={stacked ? undefined : "pr-9"}
+        className={surface === "panel" || !stacked ? "pr-9" : undefined}
       />
       <div
         ref={listScrollerRef}
@@ -900,6 +904,7 @@ function DocsReaderPanel({
                       return;
                     }
                     if (vaultId === null) return;
+                    setPanelTreeOpen(false);
                     goTo(vaultId, item.path);
                   }}
                 >
@@ -939,7 +944,7 @@ function DocsReaderPanel({
 
   const detailPane = (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {stacked && viewingFile ? (
+      {surface !== "panel" && stacked && viewingFile ? (
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <Button
             type="button"
@@ -985,7 +990,7 @@ function DocsReaderPanel({
             className={cn(
               "flex shrink-0 items-center gap-2 border-b border-border pr-2 transition-[padding] duration-[420ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
               COARSE_POINTER_HEADER_BAR_CLASS,
-              !stacked && listCollapsed ? "pl-12" : "pl-3",
+              surface !== "panel" && !stacked && listCollapsed ? "pl-12" : "pl-3",
             )}
           >
             <h1 className={cn("min-w-0 flex-1 truncate font-medium", COARSE_POINTER_HEADER_TITLE_CLASS)}>{fileLabel(doc.name)}</h1>
@@ -1070,6 +1075,51 @@ function DocsReaderPanel({
   );
 
   const showDetail = !stacked || viewingFile;
+
+  if (surface === "panel") {
+    return (
+      <div data-phone-metrics={phoneSized ? "" : undefined} className="flex h-full min-h-0 flex-col bg-background text-foreground">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
+          <Dialog.Root open={panelTreeOpen} onOpenChange={setPanelTreeOpen}>
+            <Dialog.Trigger asChild>
+              <Button type="button" variant="ghost" size="sm" aria-label="파일 목록 열기" className={cn("h-7 w-7 p-0", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}>
+                <Icon name="PanelLeft" className="size-3.5" />
+              </Button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-50 bg-background/60" />
+              <Dialog.Content data-phone-metrics={phoneSized ? "" : undefined} className="fixed inset-y-0 right-0 z-50 flex w-[min(24rem,90vw)] flex-col border-l border-border bg-background text-foreground shadow-lg outline-none">
+                <Dialog.Title className="sr-only">파일 목록</Dialog.Title>
+                <Dialog.Description className="sr-only">열 문서를 선택하세요.</Dialog.Description>
+                <Dialog.Close asChild>
+                  <Button type="button" variant="ghost" size="sm" aria-label="파일 목록 닫기" className={cn("absolute right-1 top-1 z-10 h-7 w-7 p-0", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}><Icon name="X" className="size-3.5" /></Button>
+                </Dialog.Close>
+                {listPane}
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+          <span className="min-w-0 flex-1" />
+          <Button type="button" variant="ghost" size="sm" aria-label="파일+그래프 보기" aria-pressed={panelGraphOpen} onClick={() => setGraphOpen((open) => !open)} className={cn("h-7 w-7 p-0", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}>
+            <Icon name="GitBranch" className="size-3.5" />
+          </Button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          {detailPane}
+          {panelGraphOpen ? (
+            <div className="flex min-h-0 flex-1 flex-col border-t border-border" aria-label="그래프">
+              {loadingGraph && graph === null ? (
+                <p className={cn("p-4 text-muted-foreground", COARSE_POINTER_TEXT_BASE_CLASS)}>그래프를 그리는 중…</p>
+              ) : (
+                <GraphView nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} activePath={activePath} highlightPaths={highlightPaths} onOpen={(path) => {
+                  if (vaultId !== null) goTo(vaultId, path);
+                }} />
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   if (graphOpen) {
     return (
@@ -1260,7 +1310,7 @@ const VaultScreen = withPanelSplash("Vault", <BrandIcon className="size-9" />, D
 
 function ThreadVaultPanel(_props: PluginThreadPanelProps) {
   const [subPath, setSubPath] = useState(readSessionRoute);
-  return <VaultScreen subPath={subPath} onRoute={setSubPath} />;
+  return <VaultScreen subPath={subPath} onRoute={setSubPath} surface="panel" />;
 }
 
 export default definePluginApp((app) => {
