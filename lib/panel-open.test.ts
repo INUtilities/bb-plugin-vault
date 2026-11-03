@@ -232,5 +232,11 @@ describe("graph highlight", () => {
     assert.equal(dimmed.glow, false);
     assert.equal(graphLabelHidden(1, -1, 0), true);
     assert.equal(graphLabelHidden(0, -1, 0), false);
+    // 다른 노드가 선택된 동안에도 hover한 노드 이름은 보여 준다.
+    assert.equal(graphLabelHidden(1, 0, 0, 1), false);
+    assert.equal(graphLabelHidden(2, 0, 0, 1), true);
+    // 선택 콜아웃이 맡은 노트의 캔버스 이름은 계속 숨긴다.
+    assert.equal(graphLabelHidden(0, 0, 0, 1), true);
+    assert.equal(graphLabelHidden(1, -1, -1, 1), false);
   });
 });

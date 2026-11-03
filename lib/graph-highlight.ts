@@ -53,7 +53,15 @@ export function graphNodeEmphasis(input: {
   };
 }
 
-export function graphLabelHidden(index: number, infoIndex: number, selected: number): boolean {
+export function graphLabelHidden(
+  index: number,
+  infoIndex: number,
+  selected: number,
+  hover = -1,
+): boolean {
+  // 선택 콜아웃(HTML)이 맡은 노트의 캔버스 이름은 숨긴다.
   if (index === infoIndex) return true;
+  // 다른 노드가 선택된 동안에도 지금 hover한 노트의 이름은 보여 준다.
+  if (index === hover) return false;
   return selected >= 0 && index !== selected;
 }
