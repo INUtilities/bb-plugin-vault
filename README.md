@@ -45,6 +45,20 @@ Plugin id: `vault`.
 
 Registers `navPanel` `docs`, `threadPanelAction`, a settings section, and message directives in `app.tsx`. Agents can also open the thread panel through plugin tools.
 
+## 파일 작업 공간
+
+현재 BB에서는 기존 파일 트리를 왼쪽 sidebar에, 문서 탭과 viewer를 main에,
+공식 새 Chat을 오른쪽 panel에 표시한다. 파일 탭은 `vaultId`와 `path`로 구분한다.
+탭·선택·문서별 읽기 위치와 보기 방식·검색·열린 폴더는 브라우저 세션에서 유지한다.
+탭은 방향키·Home·End로 전환하고 Delete로 닫을 수 있다. header의 그래프 버튼으로
+기존 3D 그래프에 접근하며 원문·미리보기 전환도 유지한다.
+
+Chat은 처음 제출할 때만 `hidden` thread를 만든다. 이후에는 같은 대화를 보여 주며,
+`New chat`은 새 입력으로 돌아가고 `Open thread`는 `visible` 갱신이 성공한 뒤 해당 thread를 연다.
+확인된 BB metadata만 선택 UI에 seed하며 등록한 Vault 폴더를 project에 매핑하지 않는다.
+파일 내용은 prompt에 자동 첨부하지 않는다. 파일 viewer와 기존 thread panel 도구는
+계속 read-only다. 새 sidebar/tab API가 없는 BB에서는 기존 reader 배치를 유지한다.
+
 ## 문서 미리보기
 
 Markdown은 BB SDK의 `Markdown`으로 렌더링한다. 현재 BB renderer가 제공하는

@@ -1,0 +1,24 @@
+.vault-workspace-sidebar {
+  height: var(--vault-sidebar-height, calc(100dvh - var(--bb-app-chrome-row-height)));
+  margin-inline-start: calc(-1 * var(--vault-sidebar-inset-start, var(--spacing) * 2));
+  margin-inline-end: calc(-1 * var(--vault-sidebar-inset-end, var(--spacing) * 2));
+  margin-bottom: calc(-1 * var(--vault-sidebar-inset-bottom, var(--spacing) * 2.5));
+}
+.vault-workspace-sidebar [data-testid="vault-toolbar"],
+.vault-chat-header {
+  box-sizing: border-box;
+  height: calc(40px + var(--vault-header-offset, 0px));
+  min-height: calc(40px + var(--vault-header-offset, 0px));
+}
+:is(.vault-workspace-sidebar, .vault-chat)[style*="--vault-header-offset"] :is([data-testid="vault-toolbar"], .vault-chat-header) {
+  padding-top: max(0px, var(--vault-header-offset, 0px));
+  padding-bottom: max(0px, -1 * var(--vault-header-offset, 0px));
+}
+.vault-workspace-sidebar[style*="--vault-header-offset"] [data-testid="vault-toolbar"] {
+  /* Let the reserved row shrink below the buttons' intrinsic height. */
+  grid-template-rows: minmax(0, 1fr);
+}
+.vault-document-tabs { scrollbar-width: none; }
+.vault-document-tabs::-webkit-scrollbar { display: none; }
+.vault-workspace [data-markdown-preview] { font-size: 1rem; line-height: 1.75; }
+.vault-workspace [data-markdown-preview] p { margin-block: 1em; }

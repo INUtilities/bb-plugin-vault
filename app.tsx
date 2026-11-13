@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import {
   Markdown,
   definePluginApp,
+  experimental_useAppPanel,
   experimental_SourceCode as SourceCode,
   useBbNavigate,
   useRpc,
@@ -21,6 +22,12 @@ import { useAgentSnapshot } from "@/components/use-agent-entry";
 import { VaultFileDirective, VaultGraphDirective, VaultFocusDirective } from "@/components/VaultDirective";
 import { VaultExcerptDirective } from "@/components/VaultExcerptDirective";
 import { DocViewToggle, type DocViewMode } from "@/components/DocViewToggle";
+import { registerVaultChatTab } from "@/components/VaultChatTab";
+import { VaultDocumentTabs } from "@/components/VaultDocumentTabs";
+import { documentKey, workspaceSession, type DocumentRef } from "@/lib/workspace-session";
+import { useVaultHeaderAlignment } from "@/lib/vault-header-alignment";
+import { fitVaultSidebar } from "@/lib/sidebar-layout";
+import "./workspace.css";
 import { DocumentEndSpace } from "@/components/DocumentEndSpace";
 import { FrontmatterPanel, PropertiesDock, PropertiesSheet, readFrontmatterOpen, storeFrontmatterOpen } from "@/components/FrontmatterPanel";
 import { ImagePreview } from "@/components/ImagePreview";
@@ -57,6 +64,7 @@ import { readSessionRoute, writeSessionRoute } from "@/lib/session-route";
 import { rewriteVaultMarkdown } from "@/lib/vault-markdown";
 import { graphCornerCursor, graphCornerResize } from "@/lib/graph-corner";
 import type { GraphEdge, GraphNode } from "@/lib/note-graph";
+import { decodeRoute, encodeRoute, isProbablyFile } from "@/lib/vault-route";
 import { htmlPreviewUrl } from "@/lib/preview-url";
 import { parseVaultLinkHref } from "@/lib/wiki-links";
 import type { rpcContract } from "./server";
@@ -167,40 +175,6 @@ type DocBody =
 
 function errorText(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback;
-}
-
-function decodeSegment(segment: string): string {
-  let current = segment;
-  for (let i = 0; i < 3; i += 1) {
-    if (!/%[0-9A-Fa-f]{2}/u.test(current)) break;
-    try {
-      const next = decodeURIComponent(current);
-      if (next === current) break;
-      current = next;
-    } catch {
-      break;
-    }
-  }
-  return current.normalize("NFC");
-}
-
-function encodeRoute(vaultId: string, path: string): string {
-  // toPluginPanel encodes the URL itself; pass the raw Hangul path.
-  if (path === "") return vaultId;
-  return `${vaultId}/${path}`;
-}
-
-function decodeRoute(subPath: string): { vaultId: string | null; path: string } {
-  const trimmed = subPath.replace(/^\/+/u, "").replace(/\/+$/u, "");
-  if (trimmed === "") return { vaultId: null, path: "" };
-  const parts = trimmed.split("/").map(decodeSegment);
-  const vaultId = parts[0];
-  if (vaultId === undefined || vaultId === "") return { vaultId: null, path: "" };
-  return { vaultId, path: parts.slice(1).join("/") };
-}
-
-function isProbablyFile(path: string): boolean {
-  return /\.(md|markdown|html|htm|txt)$/iu.test(path) || isImageFileName(path);
 }
 
 function fileLabel(pathOrName: string): string {
@@ -318,16 +292,25 @@ function childrenOf(entries: readonly DocEntry[], folder: string): DocEntry[] {
   return [...folders, ...files];
 }
 
-function DocsReaderPanel({
+export function DocsReaderPanel({
   subPath,
   onRoute,
   surface = "nav",
   threadId = "",
-}: PluginNavPanelProps & { onRoute?: (subPath: string) => void; surface?: "nav" | "panel"; threadId?: string }) {
+}: PluginNavPanelProps & { onRoute?: (subPath: string) => void; surface?: "nav" | "panel" | "workspace" | "sidebar"; threadId?: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
+  const appPanel = experimental_useAppPanel() as unknown as { openTab?: (options: { tab: { id: string; context: { kind: "nav-panel"; panelId: string }; availability: "fixed" } }) => boolean };
+  const workspace = useSyncExternalStore(workspaceSession.subscribe, workspaceSession.read, workspaceSession.read);
+  const workspaceMain = surface === "workspace";
+  const workspaceSidebar = surface === "sidebar";
+  const workspaceSurface = workspaceMain || workspaceSidebar;
+  const documentPanelId = useId();
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => workspaceSidebar && sidebarRef.current ? fitVaultSidebar(sidebarRef.current) : undefined, [workspaceSidebar]);
+  useVaultHeaderAlignment(sidebarRef);
   const chrome = useVaultChrome();
-  const isDesktopPanel = desktopPanel(surface, chrome);
+  const isDesktopPanel = desktopPanel(surface === "panel" ? "panel" : "nav", chrome);
   const panelRef = useRef<HTMLDivElement>(null);
   const panelListButtonRef = useRef<HTMLButtonElement>(null);
   const focusFileOnSelect = useRef(false);
@@ -529,7 +512,7 @@ function DocsReaderPanel({
   const [indexByVault, setIndexByVault] = useState<Record<string, VaultIndex>>(() => ({
     ...rememberedIndex,
   }));
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => workspaceSurface ? workspaceSession.tree(route.vaultId ?? "").query : "");
   const [filterFocusTick, setFilterFocusTick] = useState(0);
   const [doc, setDoc] = useState<DocBody | null>(null);
   const [loadingVaults, setLoadingVaults] = useState(() => rememberedVaults().length === 0);
@@ -539,12 +522,17 @@ function DocsReaderPanel({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewRetry, setPreviewRetry] = useState(0);
   const [viewMode, setViewMode] = useState<DocViewMode>("preview");
-  const [graphOpen, setGraphOpen] = useState(false);
-  const [graphPeek, setGraphPeek] = useState(!isDesktopPanel);
+  const [localGraphOpen, setLocalGraphOpen] = useState(false);
+  const graphOpen = workspaceMain ? workspace.graphOpen : localGraphOpen;
+  const setGraphOpen = (value: boolean | ((open: boolean) => boolean)) => {
+    if (workspaceMain) workspaceSession.setGraphOpen(typeof value === "function" ? value(workspaceSession.read().graphOpen) : value);
+    else setLocalGraphOpen(value);
+  };
+  const [graphPeek, setGraphPeek] = useState(!isDesktopPanel && !workspaceSurface);
   const [panelTreeOpen, setPanelTreeOpen] = useState(false);
   const panelGraphOpen = graphOpen;
   const [propsOpen, setPropsOpen] = useState(readFrontmatterOpen);
-  const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set(workspaceSurface ? workspaceSession.tree(route.vaultId ?? "").expanded : []));
   const [graph, setGraph] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
   const agent = useAgentSnapshot(threadId);
@@ -559,8 +547,8 @@ function DocsReaderPanel({
   const highlightPaths = vaultId === null ? EMPTY_HIGHLIGHTS : agent.lights[vaultId] ?? EMPTY_HIGHLIGHTS;
 
   useEffect(() => {
-    setViewMode("preview");
-  }, [activePath]);
+    setViewMode(workspaceMain && vaultId ? workspaceSession.reading({ vaultId, path: activePath }).mode : "preview");
+  }, [activePath, vaultId, workspaceMain]);
 
   useEffect(() => {
     void preloadExtendedIcons();
@@ -618,7 +606,7 @@ function DocsReaderPanel({
   }, [agent.entry, vaultId, threadId, isDesktopPanel]);
 
   useEffect(() => {
-    if ((!graphOpen && !graphPeek) || vaultId === null || graph !== null) return;
+    if (workspaceSidebar || (!graphOpen && !graphPeek) || vaultId === null || graph !== null) return;
     let cancelled = false;
     setLoadingGraph(true);
     void rpc
@@ -635,7 +623,7 @@ function DocsReaderPanel({
     return () => {
       cancelled = true;
     };
-  }, [graph, graphOpen, graphPeek, rpc, vaultId]);
+  }, [graph, graphOpen, graphPeek, rpc, vaultId, workspaceSidebar]);
   const viewingFile = activePath !== "" && isProbablyFile(activePath);
   const openFilePath = viewingFile ? activePath : "";
   const routeFolder = viewingFile
@@ -681,16 +669,22 @@ function DocsReaderPanel({
   const propsSheet = propertiesUseSheet({ device: chrome.device, viewport: chrome.viewport });
 
   useEffect(() => {
-    setExpandedFolders(new Set());
-  }, [vaultId]);
+    const tree = workspaceSurface && vaultId ? workspaceSession.tree(vaultId) : { query: "", expanded: [] };
+    setExpandedFolders(new Set(tree.expanded));
+    if (workspaceSurface) setQuery(tree.query);
+  }, [vaultId, workspaceSurface]);
+
+  function changeQuery(next: string) {
+    setQuery(next);
+    if (workspaceSurface && vaultId) workspaceSession.setTree(vaultId, { query: next, expanded: [...expandedFolders] });
+  }
 
   function toggleFolder(path: string) {
-    setExpandedFolders((current) => {
-      const next = new Set(current);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
+    const next = new Set(expandedFolders);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    setExpandedFolders(next);
+    if (workspaceSurface && vaultId) workspaceSession.setTree(vaultId, { query, expanded: [...next] });
   }
 
   const folderScrollKey = listScrollKey(vaultId, "");
@@ -714,6 +708,7 @@ function DocsReaderPanel({
   const goTo = useCallback(
     (nextVault: string, nextPath: string, replace = false) => {
       const encoded = encodeRoute(nextVault, nextPath);
+      if (workspaceSurface && !replace && isProbablyFile(nextPath)) workspaceSession.setGraphOpen(false);
       if (onRoute !== undefined) {
         onRoute(encoded);
         return;
@@ -723,7 +718,7 @@ function DocsReaderPanel({
         replace,
       });
     },
-    [navigate, onRoute],
+    [navigate, onRoute, workspaceSurface],
   );
   const goToRef = useRef(goTo);
   goToRef.current = goTo;
@@ -746,7 +741,7 @@ function DocsReaderPanel({
   );
 
   useEffect(() => {
-    if (vaultId === null) {
+    if (workspaceSidebar || vaultId === null) {
       setPreviewRoot(null);
       return;
     }
@@ -773,7 +768,7 @@ function DocsReaderPanel({
       cancelled = true;
       clearTimeout(refreshTimer);
     };
-  }, [rpc, vaultId, activePath, previewRetry]);
+  }, [rpc, vaultId, activePath, previewRetry, workspaceSidebar]);
 
   useEffect(() => {
     const remembered = rememberedVaults();
@@ -821,16 +816,19 @@ function DocsReaderPanel({
     if (vaults[0] === undefined) return;
     const known = route.vaultId !== null && vaults.some((vault) => vault.id === route.vaultId);
     if (known && route.vaultId !== null) {
-      writeSessionRoute(encodeRoute(route.vaultId, route.path));
+      if (workspaceSurface) {
+        if (viewingFile) workspaceSession.open({ vaultId: route.vaultId, path: route.path });
+        else workspaceSession.setRoute(encodeRoute(route.vaultId, route.path));
+      } else writeSessionRoute(encodeRoute(route.vaultId, route.path));
       return;
     }
-    const last = decodeRoute(readSessionRoute());
+    const last = decodeRoute(workspaceSurface ? workspaceSession.read().route : readSessionRoute());
     if (last.vaultId !== null && vaults.some((vault) => vault.id === last.vaultId)) {
       goTo(last.vaultId, last.path, true);
       return;
     }
     goTo(vaults[0].id, "", true);
-  }, [goTo, route.path, route.vaultId, vaults]);
+  }, [goTo, route.path, route.vaultId, vaults, viewingFile, workspaceSurface]);
 
   useEffect(() => {
     if (vaultId === null) return;
@@ -863,12 +861,13 @@ function DocsReaderPanel({
   }, [indexByVault, rpc, vaultId]);
 
   useEffect(() => {
-    if (vaultId === null || !viewingFile) {
+    if (workspaceSidebar || vaultId === null || !viewingFile) {
       setDoc(null);
       setLoadingDoc(false);
       return;
     }
     let cancelled = false;
+    if (workspaceMain) setDoc(null);
     setLoadingDoc(true);
     const request = isImageFileName(activePath)
       ? rpc.call("previewImage", { vaultId, path: activePath }).then((result) => ({
@@ -891,7 +890,16 @@ function DocsReaderPanel({
     return () => {
       cancelled = true;
     };
-  }, [activePath, rpc, vaultId, viewingFile]);
+  }, [activePath, rpc, vaultId, viewingFile, workspaceSidebar]);
+
+  const documentScrollerRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = documentScrollerRef.current;
+    if (!workspaceMain || !element || !doc || doc.vaultId !== vaultId || doc.path !== activePath) return;
+    const target = { vaultId: doc.vaultId, path: doc.path };
+    element.scrollTop = workspaceSession.reading(target).top;
+    return () => { workspaceSession.setReading(target, { top: element.scrollTop, mode: viewMode }); };
+  }, [doc, workspaceMain, vaultId, activePath, viewMode, graphOpen]);
 
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const listPane = (
@@ -912,15 +920,15 @@ function DocsReaderPanel({
       <Toolbar
         rootLabel={activeVault?.name ?? "Vault"}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={changeQuery}
         filterFocusTick={filterFocusTick}
         graphOpen={graphPeek}
-        onOpenGraph={isDesktopPanel ? undefined : stacked ? () => setGraphOpen(true) : undefined}
-        onToggleGraph={isDesktopPanel || stacked ? undefined : () => setGraphPeek((open) => !open)}
+        onOpenGraph={workspaceSidebar ? undefined : isDesktopPanel ? undefined : stacked ? () => setGraphOpen(true) : undefined}
+        onToggleGraph={workspaceSurface || isDesktopPanel || stacked ? undefined : () => setGraphPeek((open) => !open)}
         vaults={vaults}
         vaultId={vaultId}
         onSelectVault={(id) => goTo(id, "")}
-        className={isDesktopPanel ? panelView.compact ? undefined : "pr-9" : !stacked ? "pr-9" : undefined}
+        className={workspaceSidebar ? undefined : isDesktopPanel ? panelView.compact ? undefined : "pr-9" : !stacked ? "pr-9" : undefined}
       />
       <div
         ref={listScrollerRef}
@@ -1005,7 +1013,7 @@ function DocsReaderPanel({
 
   const detailPane = (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {!isDesktopPanel && stacked && viewingFile ? (
+      {!workspaceSurface && !isDesktopPanel && stacked && viewingFile ? (
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <Button
             type="button"
@@ -1047,7 +1055,7 @@ function DocsReaderPanel({
         <p className={cn("p-4 text-muted-foreground", COARSE_POINTER_TEXT_BASE_CLASS)}>이 문서를 찾지 못했습니다.</p>
       ) : (
         <>
-          <div
+          {!workspaceMain ? <div
             className={cn(
               "flex shrink-0 items-center gap-2 border-b border-border pr-2 transition-[padding] duration-[420ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
               COARSE_POINTER_HEADER_BAR_CLASS,
@@ -1074,14 +1082,15 @@ function DocsReaderPanel({
             {doc.kind === "markdown" || doc.kind === "html" ? (
               <DocViewToggle mode={viewMode} onChange={setViewMode} />
             ) : null}
-          </div>
+          </div> : null}
           <div className="flex min-h-0 min-w-0 flex-1">
             {doc.kind === "image" ? (
               <div className="min-h-0 min-w-0 flex-1">
                 <ImagePreview url={doc.url} name={fileLabel(doc.name)} />
               </div>
             ) : (
-            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+            <div ref={documentScrollerRef} data-testid="vault-document-scroll" data-vault-document={`${doc.vaultId}/${doc.path}`} className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
+              onScroll={event => { if (workspaceMain && doc.vaultId === vaultId && doc.path === activePath) workspaceSession.setReading(doc, { top: event.currentTarget.scrollTop, mode: viewMode }); }}>
               {doc.kind === "html" && viewMode === "preview" ? (
                 htmlSrc !== null ? <div className="m-4 flex min-h-[24rem] flex-1 flex-col">
                   <div className="mb-1 flex justify-end">
@@ -1101,7 +1110,7 @@ function DocsReaderPanel({
                   {previewError === vaultId ? <Button variant="outline" size="sm" onClick={() => setPreviewRetry(value => value + 1)}>다시 시도</Button> : null}
                 </div>
               ) : doc.kind === "markdown" && viewMode === "preview" ? (
-                <div className={cn("flex w-full justify-center px-4 pt-6 sm:px-8 sm:pt-8", COARSE_POINTER_MARKDOWN_BODY_CLASS)}>
+                <div className={cn("flex w-full justify-center px-4 pt-6 sm:px-8 sm:pt-8", !workspaceMain && COARSE_POINTER_MARKDOWN_BODY_CLASS)}>
                   <div className="w-full min-w-0 max-w-prose" onClickCapture={onWikiClick}>
                     {isDesktopPanel ? <TextHighlights ranges={focus?.highlights ?? []} requestKey={focus?.nonce ?? ""}><Markdown content={markdown.body} /></TextHighlights> : <Markdown content={markdown.body} />}
                   </div>
@@ -1148,6 +1157,40 @@ function DocsReaderPanel({
   );
 
   const showDetail = !stacked || viewingFile;
+
+  if (workspaceSidebar) return <div ref={sidebarRef} data-phone-metrics={phoneSized ? "" : undefined}
+    className="vault-workspace-sidebar flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground">{listPane}</div>;
+
+  if (workspaceMain) {
+    const selected = workspace.active;
+    const activeTabIndex = workspace.tabs.findIndex(tab => selected && documentKey(tab) === documentKey(selected));
+    const openDocument = (target: DocumentRef) => { setGraphOpen(false); goTo(target.vaultId, target.path); };
+    const closeDocument = (target: DocumentRef) => {
+      const wasActive = workspaceSession.read().active;
+      const next = workspaceSession.close(target);
+      if (wasActive && documentKey(wasActive) === documentKey(target)) {
+        if (next) goTo(next.vaultId, next.path);
+        else goTo(target.vaultId, "");
+      }
+    };
+    return <div className="vault-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground" data-phone-metrics={phoneSized ? "" : undefined}>
+      <div data-testid="vault-workspace-header" className="flex h-10 min-h-10 shrink-0 items-center border-b border-border">
+        <VaultDocumentTabs tabs={workspace.tabs} active={selected} panelId={documentPanelId} onSelect={openDocument} onClose={closeDocument} />
+        <div data-vault-document-actions className="flex shrink-0 items-center gap-0.5 px-1">
+          {showProps ? <button type="button" aria-label="속성" title="속성" aria-pressed={propsOpen} onClick={() => setPropertiesOpen(!propsOpen)}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover aria-pressed:bg-state-active in-data-[phone-metrics]:size-8"><Icon name="SlidersHorizontal" aria-hidden className="size-3.5" /></button> : null}
+          {doc?.kind === "markdown" || doc?.kind === "html" ? <DocViewToggle compact mode={viewMode} onChange={setViewMode} /> : null}
+          <button type="button" aria-label={graphOpen ? "문서 보기" : "그래프 보기"} title={graphOpen ? "문서 보기" : "그래프 보기"} aria-pressed={graphOpen} onClick={() => setGraphOpen(open => !open)}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover in-data-[phone-metrics]:size-8"><Icon name={graphOpen ? "FileText" : "GitBranch"} aria-hidden className="size-3.5" /></button>
+          <button type="button" aria-label="Chat 열기" title="Chat 열기" onClick={() => appPanel.openTab?.({ tab: { id: "chat", context: { kind: "nav-panel", panelId: "docs" }, availability: "fixed" } })}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover in-data-[phone-metrics]:size-8"><Icon name="MessageSquare" aria-hidden className="size-3.5" /></button>
+        </div>
+      </div>
+      <div id={documentPanelId} role={selected && !graphOpen ? "tabpanel" : undefined} aria-labelledby={selected && !graphOpen ? `${documentPanelId}-tab-${activeTabIndex}` : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {graphOpen ? <GraphView nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} activePath={activePath} highlightPaths={highlightPaths} onOpen={path => { if (vaultId) openDocument({ vaultId, path }); }} /> : detailPane}
+      </div>
+    </div>;
+  }
 
   if (isDesktopPanel) {
     return (
@@ -1388,6 +1431,8 @@ function DocsReaderPanel({
 }
 
 const VaultScreen = withPanelSplash("Vault", <BrandIcon className="size-9" />, DocsReaderPanel);
+const VaultWorkspaceScreen = withPanelSplash("Vault", <BrandIcon className="size-9" />, (props: PluginNavPanelProps) => <DocsReaderPanel {...props} surface="workspace" />);
+const VaultSidebar = (props: PluginNavPanelProps) => <DocsReaderPanel {...props} surface="sidebar" />;
 
 function ThreadVaultPanel(props: PluginThreadPanelProps) {
   const [subPath, setSubPath] = useState(readSessionRoute);
@@ -1395,12 +1440,14 @@ function ThreadVaultPanel(props: PluginThreadPanelProps) {
 }
 
 export default definePluginApp((app) => {
+  const workspaceSupported = registerVaultChatTab(app.slots);
   app.slots.navPanel({
     id: "docs",
     title: "Vault",
     icon: "vault/amethyst",
     path: PANEL_PATH,
-    component: VaultScreen,
+    component: workspaceSupported ? VaultWorkspaceScreen : VaultScreen,
+    ...(workspaceSupported ? { experimental_sidebar: VaultSidebar } : {}),
   });
 
   app.slots.threadPanelAction({

@@ -6,10 +6,18 @@ export type DocViewMode = "source" | "preview";
 export function DocViewToggle({
   mode,
   onChange,
+  compact = false,
 }: {
   mode: DocViewMode;
   onChange: (mode: DocViewMode) => void;
+  compact?: boolean;
 }) {
+  if (compact) return <button type="button" aria-label={mode === "preview" ? "원문 보기" : "미리보기 보기"}
+    title={mode === "preview" ? "원문 보기" : "미리보기 보기"} data-testid="vault-doc-mode"
+    className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring in-data-[phone-metrics]:size-8"
+    onClick={() => onChange(mode === "preview" ? "source" : "preview")}>
+    <Icon name={mode === "preview" ? "Code" : "Eye"} aria-hidden className="size-3.5" />
+  </button>;
   const options: { mode: DocViewMode; label: string; icon: IconName }[] = [
     { mode: "source", label: "원문", icon: "Code" },
     { mode: "preview", label: "미리보기", icon: "Eye" },
