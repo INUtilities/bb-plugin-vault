@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   frontmatterFieldLabel,
@@ -13,8 +13,10 @@ import {
   COARSE_POINTER_TEXT_SM_CLASS,
 } from "@/components/ui/coarse-pointer-sizing";
 import { Icon } from "@/components/ui/icon";
+import { PersistentResponsiveDrawerShell } from "@/components/ui/persistent-drawer";
 import { cn } from "@/lib/utils";
 import { resolveWikiTarget, type WikiEntry } from "@/lib/wiki-links";
+import "./properties-sheet.css";
 
 const OPEN_KEY = "vault-frontmatter-open";
 const PREVIEW_LIMIT = 3;
@@ -58,7 +60,7 @@ function FieldValues({
   const raw = field.key === "raw";
   return (
     <div>
-      <div className={cn("font-medium text-muted-foreground", COARSE_POINTER_TEXT_SM_CLASS)}>{frontmatterFieldLabel(field.key)}</div>
+      <div className={cn("font-medium text-muted-foreground in-data-[vault-properties-sheet]:text-[13px]! in-data-[vault-properties-sheet]:leading-[20px]! in-data-[vault-properties-sheet]:font-semibold", COARSE_POINTER_TEXT_SM_CLASS)}>{frontmatterFieldLabel(field.key)}</div>
       <div className="mt-1 flex flex-col items-start gap-1">
         {visible.map((item, offset) => (
           <FieldValue
@@ -75,7 +77,7 @@ function FieldValues({
         {overflow ? (
           <button
             type="button"
-            className={cn("font-normal text-muted-foreground hover:text-foreground", COARSE_POINTER_TEXT_SM_CLASS)}
+            className={cn("font-normal text-muted-foreground hover:text-foreground", COARSE_POINTER_TEXT_SM_CLASS, "in-data-[vault-properties-sheet]:min-h-9 in-data-[vault-properties-sheet]:text-[14px] in-data-[vault-properties-sheet]:leading-[20px]")}
             onClick={onToggle}
           >
             {expanded ? "접기" : "… 펼치기"}
@@ -105,15 +107,15 @@ function FieldValue({
 }) {
   const text = itemLabel(item);
   const textClass = tags
-    ? cn("font-normal", COARSE_POINTER_TEXT_BASE_CLASS)
-    : cn("font-normal", COARSE_POINTER_TEXT_SM_CLASS);
+    ? cn("font-normal", COARSE_POINTER_TEXT_BASE_CLASS, "in-data-[vault-properties-sheet]:text-[14px] in-data-[vault-properties-sheet]:leading-[20px]")
+    : cn("font-normal", COARSE_POINTER_TEXT_SM_CLASS, "in-data-[vault-properties-sheet]:text-[14px] in-data-[vault-properties-sheet]:leading-[20px]");
   if (item.kind === "wiki") {
     const path = resolveWikiTarget(item.target, index);
     if (path !== null && vaultId !== null) {
       return (
         <button
           type="button"
-          className={cn("max-w-full truncate text-left text-primary hover:underline", textClass)}
+          className={cn("max-w-full truncate text-left text-primary hover:underline in-data-[vault-properties-sheet]:min-h-9 in-data-[vault-properties-sheet]:whitespace-normal in-data-[vault-properties-sheet]:break-all", textClass)}
           onClick={() => onOpen(vaultId, path)}
         >
           {text}
@@ -128,7 +130,7 @@ function FieldValue({
       return (
         <button
           type="button"
-          className={cn("max-w-full truncate text-left text-primary hover:underline", textClass)}
+          className={cn("max-w-full truncate text-left text-primary hover:underline in-data-[vault-properties-sheet]:min-h-9 in-data-[vault-properties-sheet]:whitespace-normal in-data-[vault-properties-sheet]:break-all", textClass)}
           title={item.text}
           onClick={() => onOpen(vaultId, path)}
         >
@@ -182,46 +184,36 @@ export function PropertiesDock({
 }
 
 export function PropertiesSheet({
+  open,
   onClose,
   children,
 }: {
+  open: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
-  const [risen, setRisen] = useState(false);
-  useLayoutEffect(() => {
-    const id = requestAnimationFrame(() => setRisen(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
   return (
-    <div
-      data-testid="vault-properties-sheet"
-      role="region"
-      aria-label="속성"
-      className={cn(
-        "absolute inset-x-0 bottom-0 z-20 flex max-h-[45%] flex-col rounded-t-2xl border border-border bg-background shadow-[0_-12px_32px_rgb(0_0_0/0.16)] dark:shadow-[0_-12px_32px_rgb(0_0_0/0.55)]",
-        "transition-transform duration-[420ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:translate-y-0 motion-reduce:transition-none",
-        risen ? "translate-y-0" : "translate-y-full",
-      )}
-    >
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border pr-1 pl-3">
-        <span className={cn("min-w-0 flex-1 font-medium", COARSE_POINTER_HEADER_TITLE_CLASS)}>속성</span>
+    <PersistentResponsiveDrawerShell open={open} onOpenChange={(next) => { if (!next) onClose(); }} srLabel="속성" contentClassName="vault-properties-drawer">
+      <div data-vault-properties-sheet="" data-phone-metrics="" className="flex min-h-0 flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
+        <span className="min-w-0 flex-1 text-[16px] leading-[24px] font-semibold">속성</span>
         <button
           type="button"
           aria-label="닫기"
-          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground"
+          className="sr-only focus:not-sr-only focus:rounded-md focus:px-3 focus:py-2 focus:text-foreground focus:outline focus:outline-2"
           onClick={onClose}
         >
-          <Icon name="X" className="size-4" />
+          닫기
         </button>
       </div>
-      <div className="min-h-0 overflow-y-auto">{children}</div>
-    </div>
+        <div className="min-h-0 overflow-y-auto">{children}</div>
+      </div>
+    </PersistentResponsiveDrawerShell>
   );
 }
 
 export function FrontmatterPanel({
+  drawerOpen = true,
   fields,
   docPath,
   index,
@@ -229,6 +221,7 @@ export function FrontmatterPanel({
   rawByHash,
   onOpen,
 }: {
+  drawerOpen?: boolean;
   fields: readonly FrontmatterField[];
   docPath: string;
   index: readonly WikiEntry[];
@@ -242,10 +235,14 @@ export function FrontmatterPanel({
     setExpanded(new Set());
   }, [docPath]);
 
+  useEffect(() => {
+    if (!drawerOpen) setExpanded(new Set());
+  }, [drawerOpen]);
+
   if (fields.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-3 px-3 py-3" aria-label="속성">
+    <div className="flex flex-col gap-3 px-3 py-3 in-data-[vault-properties-sheet]:gap-4 in-data-[vault-properties-sheet]:px-4" aria-label="속성">
       {fields.map((field) => (
         <FieldValues
           key={field.key}

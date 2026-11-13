@@ -52,6 +52,7 @@ import { useVaultChrome } from "@/lib/use-vault-chrome";
 import { desktopPanel, phoneMetrics, stackedLayout } from "@/lib/vault-chrome";
 import { listScrollKey, readListScroll, writeListScroll } from "@/lib/session-list-scroll";
 import { THREAD_VAULT_ACTION_ID } from "@/lib/panel-open";
+import { panelLayout } from "@/lib/panel-layout";
 import { readSessionRoute, writeSessionRoute } from "@/lib/session-route";
 import { rewriteVaultMarkdown } from "@/lib/vault-markdown";
 import { graphCornerCursor, graphCornerResize } from "@/lib/graph-corner";
@@ -327,6 +328,22 @@ function DocsReaderPanel({
   const navigate = useBbNavigate();
   const chrome = useVaultChrome();
   const isDesktopPanel = desktopPanel(surface, chrome);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelListButtonRef = useRef<HTMLButtonElement>(null);
+  const focusFileOnSelect = useRef(false);
+  const [panelWidth, setPanelWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!isDesktopPanel || !panelRef.current) return;
+    const node = panelRef.current;
+    const update = () => {
+      const width = node.getBoundingClientRect().width;
+      if (width > 0) setPanelWidth(width);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isDesktopPanel]);
   const stacked = stackedLayout(chrome);
   const phoneSized = phoneMetrics(chrome);
   const route = decodeRoute(subPath);
@@ -653,7 +670,14 @@ function DocsReaderPanel({
     () => visibleTreeRows(shownIndex, expandedFolders, query),
     [expandedFolders, query, shownIndex],
   );
-  const showList = !stacked || !viewingFile;
+  const panelView = panelLayout(panelWidth, viewingFile, panelTreeOpen);
+  useLayoutEffect(() => {
+    if (!panelView.showList && focusFileOnSelect.current) {
+      panelListButtonRef.current?.focus({ preventScroll: true });
+      focusFileOnSelect.current = false;
+    }
+  }, [panelView.showList]);
+  const showList = isDesktopPanel ? panelView.showList || panelTreeOpen : !stacked || !viewingFile;
   const propsSheet = propertiesUseSheet({ device: chrome.device, viewport: chrome.viewport });
 
   useEffect(() => {
@@ -872,7 +896,7 @@ function DocsReaderPanel({
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const listPane = (
     <div
-      className="flex h-full min-h-0 w-full flex-col"
+      className="flex h-full min-h-0 min-w-0 w-full flex-col"
       onKeyDown={(event) => {
         if (
           (event.ctrlKey || event.metaKey) &&
@@ -896,7 +920,7 @@ function DocsReaderPanel({
         vaults={vaults}
         vaultId={vaultId}
         onSelectVault={(id) => goTo(id, "")}
-        className={isDesktopPanel || !stacked ? "pr-9" : undefined}
+        className={isDesktopPanel ? panelView.compact ? undefined : "pr-9" : !stacked ? "pr-9" : undefined}
       />
       <div
         ref={listScrollerRef}
@@ -940,6 +964,7 @@ function DocsReaderPanel({
                       return;
                     }
                     if (vaultId === null) return;
+                    focusFileOnSelect.current = isDesktopPanel && panelView.compact;
                     setPanelTreeOpen(false);
                     goTo(vaultId, item.path);
                   }}
@@ -1104,9 +1129,10 @@ function DocsReaderPanel({
               />
             </PropertiesDock>
           ) : null}
-          {showProps && propsSheet && propsOpen ? (
-            <PropertiesSheet onClose={() => setPropertiesOpen(false)}>
+          {showProps && propsSheet ? (
+            <PropertiesSheet open={propsOpen} onClose={() => setPropertiesOpen(false)}>
               <FrontmatterPanel
+                drawerOpen={propsOpen}
                 fields={markdown.fields}
                 docPath={doc.path}
                 index={index}
@@ -1125,9 +1151,19 @@ function DocsReaderPanel({
 
   if (isDesktopPanel) {
     return (
-      <div data-phone-metrics={phoneSized ? "" : undefined} className="flex h-full min-h-0 flex-col bg-background text-foreground">
+      <div ref={panelRef} data-testid="vault-panel" data-phone-metrics={phoneSized ? "" : undefined} className="flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground" onKeyDown={(event) => {
+        if (event.key !== "Escape" || !panelView.showList || !viewingFile) return;
+        event.preventDefault(); event.stopPropagation();
+        setPanelTreeOpen(false);
+        panelListButtonRef.current?.focus({ preventScroll: true });
+      }}>
         <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
-          <Dialog.Root open={panelTreeOpen} onOpenChange={setPanelTreeOpen}>
+          {panelView.compact ? (
+            viewingFile ? <Button ref={panelListButtonRef} type="button" variant="ghost" size="sm" aria-label={panelView.showList ? "파일로 돌아가기" : "파일 목록 열기"} onClick={() => setPanelTreeOpen(open => !open)} className="h-7 gap-1 px-2">
+              <Icon name={panelView.showList ? "ChevronRight" : "PanelLeft"} className="size-3.5" />
+              {panelView.showList ? "문서" : "목록"}
+            </Button> : <span className="px-2 text-xs text-muted-foreground">파일 목록</span>
+          ) : <Dialog.Root open={panelTreeOpen} onOpenChange={setPanelTreeOpen}>
             <Dialog.Trigger asChild>
               <Button type="button" variant="ghost" size="sm" aria-label="파일 목록 열기" className={cn("h-7 w-7 p-0", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}>
                 <Icon name="PanelLeft" className="size-3.5" />
@@ -1135,7 +1171,7 @@ function DocsReaderPanel({
             </Dialog.Trigger>
             <Dialog.Portal>
               <Dialog.Overlay className="fixed inset-0 z-50 bg-background/60" />
-              <Dialog.Content data-phone-metrics={phoneSized ? "" : undefined} className="fixed inset-y-0 right-0 z-50 flex w-[min(24rem,90vw)] flex-col border-l border-border bg-background text-foreground shadow-lg outline-none">
+              <Dialog.Content data-phone-metrics={phoneSized ? "" : undefined} style={{ width: "min(24rem, 90vw)" }} className="fixed inset-y-0 right-0 z-50 flex min-w-0 flex-col border-l border-border bg-background text-foreground shadow-lg outline-none">
                 <Dialog.Title className="sr-only">파일 목록</Dialog.Title>
                 <Dialog.Description className="sr-only">열 문서를 선택하세요.</Dialog.Description>
                 <Dialog.Close asChild>
@@ -1144,9 +1180,10 @@ function DocsReaderPanel({
                 {listPane}
               </Dialog.Content>
             </Dialog.Portal>
-          </Dialog.Root>
+          </Dialog.Root>}
         </div>
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        {panelView.showList ? <section aria-label="파일 목록" className="flex min-h-0 min-w-0 flex-1 flex-col">{listPane}</section> : null}
+        <div className={cn("relative min-h-0 min-w-0 flex-1 flex-col", panelView.showList ? "hidden" : "flex")}>
           {detailPane}
           <FloatingGraphCard open={panelGraphOpen} onOpenChange={setGraphOpen}>
               <Button type="button" variant="ghost" size="icon" aria-label="그래프 닫기" onClick={() => setGraphOpen(false)} className={cn("absolute left-2 top-2 z-30 size-6", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}>

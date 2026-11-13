@@ -95,6 +95,7 @@ export function GraphHelp({ documentMode = false }: { documentMode?: boolean }) 
       {open ? (
         <p
           role="tooltip"
+          data-bb-frost-surface="tooltip"
           className={cn(
             "absolute right-0 bottom-full z-20 mb-1 w-56 rounded-md border border-border bg-popover px-2 py-1.5 leading-snug text-popover-foreground shadow-md",
             COARSE_POINTER_META_TEXT_CLASS,
