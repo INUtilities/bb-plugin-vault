@@ -11,9 +11,12 @@ export function clampCard(card: CardRect, bounds: Bounds): CardRect {
   const width = clamp(card.width, 0, h.end - h.start), height = clamp(card.height, 0, v.end - v.start);
   return { x: clamp(card.x, h.start, h.end - width), y: clamp(card.y, v.start, v.end - height), width, height };
 }
+export function collapsedCard(bounds: Bounds): CardRect {
+  return clampCard({ x: 12, y: bounds.height - 48, width: 36, height: 36 }, bounds);
+}
 export function initialCard(bounds: Bounds): CardRect {
   const side = Math.min(260, limits(bounds.width).end - limits(bounds.width).start, limits(bounds.height).end - limits(bounds.height).start);
-  return clampCard({ x: bounds.width - side - 12, y: bounds.height - side - 12, width: side, height: side }, bounds);
+  return clampCard({ x: 12, y: bounds.height - side - 12, width: side, height: side }, bounds);
 }
 export function resizeCard(card: CardRect, bounds: Bounds, corner: Corner, dx: number, dy: number): CardRect {
   const h = limits(bounds.width), v = limits(bounds.height);

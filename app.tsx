@@ -559,7 +559,7 @@ function DocsReaderPanel({
     }
     if (pending?.action === "file") {
       appliedNonceRef.current = agent.entry?.nonce ?? appliedNonceRef.current;
-      setGraphOpen(false);
+      if (!isDesktopPanel) setGraphOpen(false);
       goToRef.current(pending.vaultId, pending.path);
       return;
     }
@@ -584,15 +584,15 @@ function DocsReaderPanel({
         setGraphOpen(true);
         return;
       }
-      if (switchedVault) setGraphOpen(false);
+      if (switchedVault && !isDesktopPanel) setGraphOpen(false);
       return;
     }
     if (current?.action === "file" && current.vaultId === vaultId && current.nonce !== appliedNonceRef.current) {
       appliedNonceRef.current = current.nonce;
-      setGraphOpen(false);
+      if (!isDesktopPanel) setGraphOpen(false);
       return;
     }
-    if (switchedVault) setGraphOpen(false);
+    if (switchedVault && !isDesktopPanel) setGraphOpen(false);
   }, [agent.entry, vaultId, threadId, isDesktopPanel]);
 
   useEffect(() => {
@@ -964,14 +964,6 @@ function DocsReaderPanel({
 
   const detailPane = (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {isDesktopPanel ? (
-        <div className={cn("absolute right-2 z-20 flex items-center gap-1 rounded-[18px] border border-border/50 bg-background/75 p-1 shadow-lg backdrop-blur-[14px] backdrop-saturate-[1.25]", doc !== null && viewingFile ? "top-11" : "top-2")}>
-          <Button type="button" variant="ghost" size="sm" aria-label="파일+그래프 보기" aria-pressed={panelGraphOpen} onClick={() => setGraphOpen((open) => !open)} className={cn("relative h-7 w-7 p-0 aria-pressed:bg-transparent aria-pressed:hover:bg-transparent", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}>
-            <Icon name="GitBranch" className="size-3.5" />
-            {panelGraphOpen ? <span aria-hidden className="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary" /> : null}
-          </Button>
-        </div>
-      ) : null}
       {!isDesktopPanel && stacked && viewingFile ? (
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <Button
@@ -1044,11 +1036,11 @@ function DocsReaderPanel({
           </div>
           <div className="flex min-h-0 min-w-0 flex-1">
             {doc.kind === "image" ? (
-              <div className={cn("min-h-0 min-w-0 flex-1", isDesktopPanel && "pt-12")}>
+              <div className="min-h-0 min-w-0 flex-1">
                 <ImagePreview url={doc.url} name={fileLabel(doc.name)} />
               </div>
             ) : (
-            <div className={cn("min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain", isDesktopPanel && "pt-12")}>
+            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
               {doc.kind === "html" && viewMode === "preview" ? (
                 <iframe
                   title={doc.name}
@@ -1129,8 +1121,7 @@ function DocsReaderPanel({
         </div>
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {detailPane}
-          {panelGraphOpen ? (
-            <FloatingGraphCard>
+          <FloatingGraphCard open={panelGraphOpen} onOpenChange={setGraphOpen}>
               <Button type="button" variant="ghost" size="icon" aria-label="그래프 닫기" onClick={() => setGraphOpen(false)} className={cn("absolute left-2 top-2 z-30 size-6", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}>
                 <Icon name="X" className="size-3.5" />
               </Button>
@@ -1141,8 +1132,7 @@ function DocsReaderPanel({
                   if (vaultId !== null) goTo(vaultId, path);
                 }} />
               )}
-            </FloatingGraphCard>
-          ) : null}
+          </FloatingGraphCard>
         </div>
       </div>
     );

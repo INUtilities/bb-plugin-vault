@@ -41,6 +41,7 @@ import {
   type CalloutRect,
 } from "@/lib/graph-callouts";
 import { agentMarkGlow, graphLabelHidden, graphNodeEmphasis, highlightedNodeIndices } from "@/lib/graph-highlight";
+import { graphNodeHitRadius } from "@/lib/graph-hit";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const THEME_STYLE_ID = "bb-app-theme";
@@ -691,7 +692,7 @@ export function GraphView({
       const shownLabels = new Set<number>();
       let labelsAnimating = false;
       function label(index: number) {
-        if (graphLabelHidden(index, infoIndex, selected)) return;
+        if (graphLabelHidden(index, infoIndex, selected, propsRef.current.documentMode ? -1 : hover)) return;
         const point = projected[index];
         let text = labelText.get(index);
         if (!text) {
@@ -755,7 +756,8 @@ export function GraphView({
         if (point?.visible && point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height) label(index);
       } else if (!gliding) {
         // 드래그·관성 중에는 이름표를 생략해 프레임이 밀리지 않게 한다.
-        for (const index of closest) label(index);
+        if (hover >= 0) label(hover);
+        for (const index of closest) if (index !== hover) label(index);
       }
       if (propsRef.current.documentMode || !gliding) {
         for (const index of labelStarts.keys()) {
@@ -781,7 +783,7 @@ export function GraphView({
       for (let i = order.length - 1; i >= 0; i--) {
         const index = order[i];
         const node = projected[index];
-        if (node?.visible && Math.hypot(node.x - point.x, node.y - point.y) <= Math.max(radius(index) + 3, largeHit ? 22 : 12)) return index;
+        if (node?.visible && Math.hypot(node.x - point.x, node.y - point.y) <= graphNodeHitRadius(radius(index), largeHit)) return index;
       }
       return -1;
     }

@@ -53,7 +53,8 @@ export function graphNodeEmphasis(input: {
   };
 }
 
-export function graphLabelHidden(index: number, infoIndex: number, selected: number): boolean {
+export function graphLabelHidden(index: number, infoIndex: number, selected: number, hover = -1): boolean {
   if (index === infoIndex) return true;
+  if (index === hover) return false;
   return selected >= 0 && index !== selected;
 }

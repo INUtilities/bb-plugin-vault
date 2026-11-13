@@ -8,7 +8,8 @@ it("thread panel exposes a closed file drawer and an independent document and gr
   assert.match(app, /\[panelTreeOpen, setPanelTreeOpen\] = useState\(false\)/);
   assert.match(app, /<Dialog\.Root open=\{panelTreeOpen\} onOpenChange=\{setPanelTreeOpen\}>/);
   assert.match(app, /setPanelTreeOpen\(false\);\s*goTo\(vaultId, item\.path\)/);
-  assert.match(app, /aria-label="파일\+그래프 보기"/);
-  assert.match(app, /if \(isDesktopPanel\)[\s\S]*?\{detailPane\}[\s\S]*?\{panelGraphOpen \?/);
+  const card = readFileSync(new URL("../components/FloatingGraphCard.tsx", import.meta.url), "utf8");
+  assert.match(card, /aria-label="파일\+그래프 보기"/);
+  assert.match(app, /if \(isDesktopPanel\)[\s\S]*?\{detailPane\}[\s\S]*?<FloatingGraphCard open=\{panelGraphOpen\}/);
   assert.match(app, /highlightPaths=\{highlightPaths\}/);
 });
