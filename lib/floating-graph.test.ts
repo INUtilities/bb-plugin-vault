@@ -6,7 +6,7 @@ describe('floating graph geometry', () => {
   const bounds = { width: 800, height: 600 };
   const card = { x: 100, y: 100, width: 320, height: 240 };
   it('starts at the bottom right with a margin', () => {
-    assert.deepEqual(initialCard(bounds), { x: 468, y: 268, width: 320, height: 320 });
+    assert.deepEqual(initialCard(bounds), { x: 528, y: 328, width: 260, height: 260 });
   });
   it('starts square within the smaller available axis', () => {
     assert.deepEqual(initialCard({ width: 200, height: 500 }), { x: 12, y: 312, width: 176, height: 176 });

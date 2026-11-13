@@ -12,7 +12,7 @@ export function clampCard(card: CardRect, bounds: Bounds): CardRect {
   return { x: clamp(card.x, h.start, h.end - width), y: clamp(card.y, v.start, v.end - height), width, height };
 }
 export function initialCard(bounds: Bounds): CardRect {
-  const side = Math.min(320, limits(bounds.width).end - limits(bounds.width).start, limits(bounds.height).end - limits(bounds.height).start);
+  const side = Math.min(260, limits(bounds.width).end - limits(bounds.width).start, limits(bounds.height).end - limits(bounds.height).start);
   return clampCard({ x: bounds.width - side - 12, y: bounds.height - side - 12, width: side, height: side }, bounds);
 }
 export function resizeCard(card: CardRect, bounds: Bounds, corner: Corner, dx: number, dy: number): CardRect {

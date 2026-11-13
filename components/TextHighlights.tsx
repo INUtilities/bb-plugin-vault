@@ -130,5 +130,5 @@ export function TextHighlights({ children, ranges, requestKey }: {
     };
   }, [name, rangesKey, requestKey]);
 
-  return <div ref={rootRef}><style>{`::highlight(${name}) { background-color: var(--primary); color: var(--primary-foreground); }`}</style>{children}</div>;
+  return <div ref={rootRef}><style>{`::highlight(${name}) { background-color: color-mix(in oklab, var(--primary) 25%, transparent); color: var(--foreground); }`}</style>{children}</div>;
 }
