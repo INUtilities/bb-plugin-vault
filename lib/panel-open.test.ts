@@ -268,7 +268,7 @@ describe("focus tool schema", () => {
     const { registerVaultAgentTools } = await import("./agent-tools.ts");
     const tools = new Map<string, any>();
     registerVaultAgentTools({ agents: { registerTool: (tool: any) => tools.set(tool.name, tool) } } as any, { loadVaults: async () => [], listEntries: async () => [] });
-    assert.deepEqual([...tools.keys()], ["vault_focus_file", "vault_open_file", "vault_open_graph"]);
+    assert.deepEqual([...tools.keys()], ["vault_show_excerpt", "vault_focus_file", "vault_open_file", "vault_open_graph"]);
     const schema = tools.get("vault_focus_file").parameters;
     assert.equal(schema.safeParse({ path: "a.md", highlights: [{ text: '"한글"', occurrence: 2 }] }).success, true);
     for (const bad of [

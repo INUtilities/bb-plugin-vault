@@ -19,6 +19,7 @@ import { PanelOpenBridge } from "@/components/PanelOpenBridge";
 import { withPanelSplash } from "@/components/PanelSplash";
 import { useAgentSnapshot } from "@/components/use-agent-entry";
 import { VaultFileDirective, VaultGraphDirective, VaultFocusDirective } from "@/components/VaultDirective";
+import { VaultExcerptDirective } from "@/components/VaultExcerptDirective";
 import { DocViewToggle, type DocViewMode } from "@/components/DocViewToggle";
 import { DocumentEndSpace } from "@/components/DocumentEndSpace";
 import { FrontmatterPanel, PropertiesDock, PropertiesSheet, readFrontmatterOpen, storeFrontmatterOpen } from "@/components/FrontmatterPanel";
@@ -1370,6 +1371,7 @@ export default definePluginApp((app) => {
     component: HiddenFilesSettings,
   });
 
+  app.slots.messageDirective({ id: "vault-excerpt", component: VaultExcerptDirective });
   app.slots.messageDirective({ id: "vault-focus", component: VaultFocusDirective });
   app.slots.messageDirective({ id: "vault-file", component: VaultFileDirective });
   app.slots.messageDirective({ id: "vault-graph", component: VaultGraphDirective });

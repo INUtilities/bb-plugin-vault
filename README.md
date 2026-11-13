@@ -62,6 +62,15 @@ Registers `navPanel` `docs`, `threadPanelAction`, a settings section, and messag
 `vault_open_graph`의 점 누적 방식은 그대로다. 채팅의 `vault-focus` 칩을
 다시 누르면 해당 위치로 다시 이동한다. 실제 일치 여부는 패널에서 확인한다.
 
+## 채팅에서 파일 발췌 표시
+
+`vault_show_excerpt`에 `path`와 선택적인 `vaultId`, `startLine`, `endLine`을
+전달하면 채팅에 파일 내용 카드가 표시된다. 줄 번호는 1부터 시작하며, 최대 20줄·1,200자를 표시한다. 범위를
+생략하면 frontmatter를 건너뛴 본문 첫 8줄을 표시한다. 카드는 화면에 표시될 때 파일을 읽어 그 시점의 최신 내용을 보여준다.
+파일이 바뀌면 카드를 다시 표시해야 변경 내용이 반영된다. Markdown과 텍스트 파일만
+지원한다. Markdown 서식으로 발췌를 읽고, 카드 우측 상단의 패널 열기 아이콘을 누르면
+같은 파일이 스레드의 Vault 패널에 열린다. 카드를 표시하는 것만으로 패널을 열지는 않는다.
+
 ## related
 
 | plugin | role |

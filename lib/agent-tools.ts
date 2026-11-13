@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { excerptTarget, vaultExcerptDirective } from "./vault-excerpt.ts";
 
 import {
   MAX_HIGHLIGHT_PATHS,
@@ -10,6 +11,8 @@ import {
   openVaultGraph,
   type OpenDeps,
   type PanelOpenRequest,
+  chooseVault,
+  resolveFilePath,
 } from "./panel-open.ts";
 
 const fileParameters = z
@@ -33,6 +36,13 @@ const focusParameters = z.object({
   graphPaths: z.array(z.string().min(1).max(4096)).max(MAX_HIGHLIGHT_PATHS).optional(),
 }).strict();
 
+const excerptParameters = z.object({
+  vaultId: z.string().min(1).max(256).optional(),
+  path: z.string().min(1).max(4096),
+  startLine: z.number().int().min(1).max(1_000_000).optional(),
+  endLine: z.number().int().min(1).max(1_000_000).optional(),
+}).strict().refine((value) => excerptTarget({ ...value, vaultId: value.vaultId ?? "_" }) !== null);
+
 export function registerVaultAgentTools(
   bb: BbPluginApi,
   deps: Pick<OpenDeps, "loadVaults" | "listEntries">,
@@ -42,6 +52,30 @@ export function registerVaultAgentTools(
     listEntries: deps.listEntries,
     publish: (payload: PanelOpenRequest) => {
       bb.realtime.publish(PANEL_OPEN_CHANNEL, payload);
+    },
+  });
+
+  bb.agents.registerTool({
+    name: "vault_show_excerpt",
+    description: "Show a current excerpt of a vault text file in chat, with a button to open it in the Vault panel.",
+    instructions: "채팅에 볼트 파일 발췌 카드를 표시한다. path는 볼트 상대 경로다. 줄 번호는 1부터 시작하며 최대 20줄·1200자를 표시한다. 범위를 생략하면 frontmatter 다음 첫 8줄을 표시한다. 성공하면 반환된 ::vault-excerpt 지시문 한 줄을 답변에 그대로 포함한다.",
+    presentation: { label: { pending: "볼트 발췌 준비 중", completed: "볼트 발췌를 준비했습니다" } },
+    parameters: excerptParameters,
+    async execute(params) {
+      const error = (text: string) => ({ content: [{ type: "text" as const, text }] as [{ type: "text"; text: string }], isError: true as const });
+      const parsed = excerptTarget({ ...params, vaultId: params?.vaultId ?? "_" });
+      if (!parsed) return error("발췌 요청이 올바르지 않습니다.");
+      try {
+        const chosen = chooseVault(await deps.loadVaults(), params.vaultId);
+        if (!chosen.ok) return error(chosen.message);
+        const file = resolveFilePath(await deps.listEntries(chosen.vault.id), parsed.path);
+        if (!file.ok) return error(file.message);
+        if (!/\.(md|markdown|txt)$/iu.test(file.path)) return error("발췌는 Markdown과 텍스트 파일만 지원합니다.");
+        const target = excerptTarget({ ...parsed, vaultId: chosen.vault.id, path: file.path });
+        const directive = target && vaultExcerptDirective(target);
+        if (!directive) return error("발췌 요청이 올바르지 않습니다.");
+        return `답변에 다음 한 줄을 그대로 포함하세요.\n${directive}`;
+      } catch (cause) { return error(cause instanceof Error ? cause.message : "볼트 목록을 읽지 못했습니다."); }
     },
   });
 
