@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, it } from "node:test";
 
-import { graphCornerCursor, graphCornerResize, type GraphCornerDrag } from "./graph-corner.ts";
+import { graphCornerCursor, graphCornerCursors, graphCornerResize, type GraphCornerDrag } from "./graph-corner.ts";
 
 const drag: GraphCornerDrag = {
   startX: 100,
@@ -53,4 +53,14 @@ describe("graph corner resize", () => {
   it("insets the peek chrome so the corner stays clear", () => {
     assert.match(graph, /onFullscreen \? "right-12" : "right-2"/);
   });
+});
+
+it("uses the original cursor for NE and flips its artwork and hotspot for other corners", () => {
+  assert.equal(graphCornerCursors.ne, graphCornerCursor);
+  for (const [corner, transform, hotspot] of [["nw", "translate(16 0) scale(-1 1)", "3 3"], ["se", "translate(0 16) scale(1 -1)", "13 13"], ["sw", "translate(16 16) scale(-1 -1)", "3 13"]] as const) {
+    const cursor = graphCornerCursors[corner];
+    assert.ok(decodeURIComponent(cursor).includes(transform));
+    assert.ok(cursor.includes(`) ${hotspot},`));
+    assert.ok(decodeURIComponent(cursor).includes("M2 2.75H13.25V14"));
+  }
 });

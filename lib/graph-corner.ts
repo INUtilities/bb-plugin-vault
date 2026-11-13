@@ -3,6 +3,18 @@ const CORNER_CURSOR_SVG = `<svg xmlns='http://www.w3.org/2000/svg' width='16' he
 /** Small ㄱ cursor. The hotspot is the bend, so the corner sits on the pointer. */
 export const graphCornerCursor = `url("data:image/svg+xml,${encodeURIComponent(CORNER_CURSOR_SVG)}") 13 3, nesw-resize`;
 
+function flippedCursor(transform: string, hotspot: string, fallback: string): string {
+  const svg = CORNER_CURSOR_SVG.replace("<path", `<g transform='${transform}'><path`).replace("</svg>", "</g></svg>");
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${hotspot}, ${fallback}`;
+}
+
+export const graphCornerCursors = {
+  ne: graphCornerCursor,
+  nw: flippedCursor("translate(16 0) scale(-1 1)", "3 3", "nwse-resize"),
+  se: flippedCursor("translate(0 16) scale(1 -1)", "13 13", "nwse-resize"),
+  sw: flippedCursor("translate(16 16) scale(-1 -1)", "3 13", "nesw-resize"),
+};
+
 export type GraphCornerDrag = {
   startX: number;
   startY: number;

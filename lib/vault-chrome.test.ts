@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { phoneMetrics, stackedLayout } from "./vault-chrome.ts";
+import { phoneMetrics, stackedLayout, desktopPanel } from "./vault-chrome.ts";
 
 describe("vault chrome", () => {
   it("keeps the narrow phone stack and gives a narrow desktop its own branch", () => {
@@ -34,4 +34,12 @@ describe("vault chrome", () => {
     assert.doesNotMatch(app, /useIsCompactViewport|COMPACT_VIEWPORT|isCompactViewport/);
     assert.doesNotMatch(`${app}\n${graph}`, /\(pointer: coarse\)|\(max-width: 767px\)/);
   });
+});
+
+it("limits the new panel to desktop on every viewport", () => {
+  for (const viewport of ["narrow", "medium", "wide"] as const) {
+    assert.equal(desktopPanel("panel", { device: "desktop", viewport }), true);
+    assert.equal(desktopPanel("nav", { device: "desktop", viewport }), false);
+    for (const device of ["phone", "tablet"] as const) assert.equal(desktopPanel("panel", { device, viewport }), false);
+  }
 });

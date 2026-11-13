@@ -237,3 +237,13 @@ describe("graphCalloutLeader", () => {
     assert.deepEqual(shortEdge[2], { x: 150, y: 155 });
   });
 });
+
+it("places the active file callout with a leader even when graph geometry crowds the card", () => {
+  const nodes = Array.from({ length: 21 }, (_, i) => ({ x: i * 10, y: 60, radius: 100, visible: true }));
+  const anchor = { x: 100, y: 100 };
+  const rect = placeGraphCallout(anchor, { width: 60, height: 22 }, { width: 200, height: 200 });
+  assert.ok(rect);
+  assert.ok(nodes.some(node => node.x + node.radius > rect.x && node.x - node.radius < rect.x + rect.width
+    && node.y + node.radius > rect.y && node.y - node.radius < rect.y + rect.height));
+  assert.ok(graphCalloutLeader(anchor, rect, 3));
+});

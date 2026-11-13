@@ -21,3 +21,7 @@ export function stackedLayout(chrome: VaultChromeAxes): boolean {
 export function phoneMetrics(chrome: VaultChromeAxes): boolean {
   return chrome.device === "phone" && chrome.viewport === "narrow";
 }
+
+export function desktopPanel(surface: "nav" | "panel", chrome: VaultChromeAxes): boolean {
+  return surface === "panel" && chrome.device === "desktop";
+}

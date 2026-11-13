@@ -1,3 +1,4 @@
+import { documentTooltipIndex } from "@/lib/floating-graph";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,7 +62,9 @@ type Controls = {
   focusPath: (path: string) => void;
 };
 
-export function GraphHelp() {
+const DOCUMENT_GRAPH_HELP = "드래그로 회전 · 휠로 확대 · 노트 탭으로 파일 열기 · 방향키로 회전 · +/−로 확대 · Home으로 초기화";
+
+export function GraphHelp({ documentMode = false }: { documentMode?: boolean }) {
   const largeHit = useVaultChrome().hitTarget === "large";
   const [open, setOpen] = useState(false);
   return (
@@ -96,7 +99,7 @@ export function GraphHelp() {
             COARSE_POINTER_META_TEXT_CLASS,
           )}
         >
-          {GRAPH_HELP}
+          {documentMode ? DOCUMENT_GRAPH_HELP : GRAPH_HELP}
         </p>
       ) : null}
     </div>
@@ -111,6 +114,8 @@ export function GraphView({
   onFullscreen,
   variant = "full",
   highlightPaths = [],
+  transparent = false,
+  documentMode = false,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -119,6 +124,8 @@ export function GraphView({
   onFullscreen?: () => void;
   variant?: "full" | "local";
   highlightPaths?: readonly string[];
+  transparent?: boolean;
+  documentMode?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -136,6 +143,7 @@ export function GraphView({
     local: variant === "local",
     mini: onFullscreen !== undefined,
     highlightPaths,
+    documentMode,
   });
   propsRef.current = {
     activePath,
@@ -143,6 +151,7 @@ export function GraphView({
     local: variant === "local",
     mini: onFullscreen !== undefined,
     highlightPaths,
+    documentMode,
   };
   const helpId = useId();
   const largeHit = useVaultChrome().hitTarget === "large";
@@ -418,7 +427,10 @@ export function GraphView({
         aimGraphCameraAt(camera, layout.nodes[index]);
         focusFrom = null;
       }
-      if (selected !== index || infoIndex !== index) selectInfo(index, false);
+      if (propsRef.current.documentMode) {
+        selected = index;
+        selectedStarted = performance.now();
+      } else if (selected !== index || infoIndex !== index) selectInfo(index, false);
       requestDraw();
     }
     function applyFocus(time: number) {
@@ -737,9 +749,15 @@ export function GraphView({
         ctx!.fillText(text.title, rect.x + 6, rect.y + rect.height / 2);
         ctx!.restore();
       }
-      // 드래그·관성 중에는 이름표를 생략해 프레임이 밀리지 않게 한다.
-      if (!gliding) {
+      if (propsRef.current.documentMode) {
+        const index = documentTooltipIndex(nodes, propsRef.current.activePath);
+        const point = projected[index];
+        if (point?.visible && point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height) label(index);
+      } else if (!gliding) {
+        // 드래그·관성 중에는 이름표를 생략해 프레임이 밀리지 않게 한다.
         for (const index of closest) label(index);
+      }
+      if (propsRef.current.documentMode || !gliding) {
         for (const index of labelStarts.keys()) {
           if (!shownLabels.has(index)) labelStarts.delete(index);
         }
@@ -860,7 +878,7 @@ export function GraphView({
         drag = null;
         pinch = pointers.size === 2 ? { ...pinchPoints(), scale: camera.scale, x: camera.x, y: camera.y } : null;
       } else {
-        drag = { id: event.pointerId, start: point, last: point, moved: false, pan: event.shiftKey, hit: hit(point) };
+        drag = { id: event.pointerId, start: point, last: point, moved: false, pan: !propsRef.current.documentMode && event.shiftKey, hit: hit(point) };
       }
     }
     function pointerMove(event: globalThis.PointerEvent) {
@@ -927,7 +945,7 @@ export function GraphView({
       if (canvas!.hasPointerCapture(event.pointerId)) canvas!.releasePointerCapture(event.pointerId);
       requestDraw();
       if (clicked !== null) {
-        if (propsRef.current.local) {
+        if (propsRef.current.local || propsRef.current.documentMode) {
           if (clicked >= 0) propsRef.current.onOpen(nodes[clicked].path);
         } else {
           selectInfo(clicked);
@@ -1052,6 +1070,13 @@ export function GraphView({
   const highlightKey = highlightPaths.join("\0");
   useEffect(() => { controlsRef.current?.redraw(); }, [highlightKey]);
 
+  const zoomControls = (
+    <div className={cn("pointer-events-auto flex items-center", documentMode && "flex-col")}>
+      <Button type="button" variant="ghost" size="icon" className={cn("size-6", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)} aria-label="확대" onClick={() => controlsRef.current?.zoom(1.2)}>+</Button>
+      <Button type="button" variant="ghost" size="icon" className={cn("size-6", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)} aria-label="축소" onClick={() => controlsRef.current?.zoom(1 / 1.2)}>−</Button>
+    </div>
+  );
+
   return (
     <div data-no-sidebar-swipe="" className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={wrapRef} className="relative min-h-0 min-w-0 flex-1 overscroll-none">
@@ -1064,7 +1089,7 @@ export function GraphView({
             aria-label={variant === "local" ? "로컬 그래프" : "3D 노트 그래프"}
             aria-describedby={helpId}
             tabIndex={0}
-            className="absolute inset-0 block size-full cursor-grab bg-background touch-none outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:cursor-grabbing"
+            className={cn("absolute inset-0 block size-full cursor-grab touch-none outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:cursor-grabbing", !transparent && "bg-background")}
           />
         )}
         {info !== null && (
@@ -1088,11 +1113,9 @@ export function GraphView({
                 </Button>
               </div>
             ) : null}
+            {documentMode ? <div className="pointer-events-none absolute bottom-6 left-2 z-20">{zoomControls}</div> : null}
             <div className={cn("pointer-events-none absolute top-2 z-20 flex items-center gap-2 text-muted-foreground", onFullscreen ? "right-12" : "right-2", COARSE_POINTER_META_TEXT_CLASS)}>
-              <div className="pointer-events-auto flex items-center">
-                <Button type="button" variant="ghost" size="icon" className={cn("size-6", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)} aria-label="확대" onClick={() => controlsRef.current?.zoom(1.2)}>+</Button>
-                <Button type="button" variant="ghost" size="icon" className={cn("size-6", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)} aria-label="축소" onClick={() => controlsRef.current?.zoom(1 / 1.2)}>−</Button>
-              </div>
+              {!documentMode ? zoomControls : null}
               <span>{nodes.length}개</span>
               <span className="inline-flex items-center gap-1" aria-label="먼 노트는 배경에 가깝고, 가까운 노트는 테마 강조색">
                 far
@@ -1101,9 +1124,9 @@ export function GraphView({
               </span>
             </div>
             <p id={helpId} className="pointer-events-none absolute h-px w-px overflow-hidden whitespace-nowrap">
-              {GRAPH_HELP}
+              {documentMode ? DOCUMENT_GRAPH_HELP : GRAPH_HELP}
             </p>
-            <GraphHelp />
+            <GraphHelp documentMode={documentMode} />
           </>
         ) : null}
         {info !== null && (

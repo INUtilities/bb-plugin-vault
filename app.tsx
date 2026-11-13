@@ -14,6 +14,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 import { BrandIcon } from "@/components/BrandIcon";
 import { GraphView } from "@/components/GraphView";
+import { FloatingGraphCard } from "@/components/FloatingGraphCard";
 import { PanelOpenBridge } from "@/components/PanelOpenBridge";
 import { withPanelSplash } from "@/components/PanelSplash";
 import { useAgentSnapshot } from "@/components/use-agent-entry";
@@ -47,7 +48,7 @@ import { listedEntryVisible } from "@/lib/hidden-files";
 import { useHiddenPrefs } from "@/lib/hidden-prefs";
 import { propertiesUseSheet } from "@/lib/properties-layout";
 import { useVaultChrome } from "@/lib/use-vault-chrome";
-import { phoneMetrics, stackedLayout } from "@/lib/vault-chrome";
+import { desktopPanel, phoneMetrics, stackedLayout } from "@/lib/vault-chrome";
 import { listScrollKey, readListScroll, writeListScroll } from "@/lib/session-list-scroll";
 import { THREAD_VAULT_ACTION_ID } from "@/lib/panel-open";
 import { readSessionRoute, writeSessionRoute } from "@/lib/session-route";
@@ -322,6 +323,7 @@ function DocsReaderPanel({
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const chrome = useVaultChrome();
+  const isDesktopPanel = desktopPanel(surface, chrome);
   const stacked = stackedLayout(chrome);
   const phoneSized = phoneMetrics(chrome);
   const route = decodeRoute(subPath);
@@ -516,7 +518,7 @@ function DocsReaderPanel({
   const [previewBaseUrl, setPreviewBaseUrl] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<DocViewMode>("preview");
   const [graphOpen, setGraphOpen] = useState(false);
-  const [graphPeek, setGraphPeek] = useState(surface !== "panel");
+  const [graphPeek, setGraphPeek] = useState(!isDesktopPanel);
   const [panelTreeOpen, setPanelTreeOpen] = useState(false);
   const panelGraphOpen = graphOpen;
   const [propsOpen, setPropsOpen] = useState(readFrontmatterOpen);
@@ -855,12 +857,12 @@ function DocsReaderPanel({
         onQueryChange={setQuery}
         filterFocusTick={filterFocusTick}
         graphOpen={graphPeek}
-        onOpenGraph={surface === "panel" ? undefined : stacked ? () => setGraphOpen(true) : undefined}
-        onToggleGraph={surface === "panel" || stacked ? undefined : () => setGraphPeek((open) => !open)}
+        onOpenGraph={isDesktopPanel ? undefined : stacked ? () => setGraphOpen(true) : undefined}
+        onToggleGraph={isDesktopPanel || stacked ? undefined : () => setGraphPeek((open) => !open)}
         vaults={vaults}
         vaultId={vaultId}
         onSelectVault={(id) => goTo(id, "")}
-        className={surface === "panel" || !stacked ? "pr-9" : undefined}
+        className={isDesktopPanel || !stacked ? "pr-9" : undefined}
       />
       <div
         ref={listScrollerRef}
@@ -944,7 +946,7 @@ function DocsReaderPanel({
 
   const detailPane = (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {surface !== "panel" && stacked && viewingFile ? (
+      {!isDesktopPanel && stacked && viewingFile ? (
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <Button
             type="button"
@@ -990,7 +992,7 @@ function DocsReaderPanel({
             className={cn(
               "flex shrink-0 items-center gap-2 border-b border-border pr-2 transition-[padding] duration-[420ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
               COARSE_POINTER_HEADER_BAR_CLASS,
-              surface !== "panel" && !stacked && listCollapsed ? "pl-12" : "pl-3",
+              !isDesktopPanel && !stacked && listCollapsed ? "pl-12" : "pl-3",
             )}
           >
             <h1 className={cn("min-w-0 flex-1 truncate font-medium", COARSE_POINTER_HEADER_TITLE_CLASS)}>{fileLabel(doc.name)}</h1>
@@ -1076,7 +1078,7 @@ function DocsReaderPanel({
 
   const showDetail = !stacked || viewingFile;
 
-  if (surface === "panel") {
+  if (isDesktopPanel) {
     return (
       <div data-phone-metrics={phoneSized ? "" : undefined} className="flex h-full min-h-0 flex-col bg-background text-foreground">
         <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
@@ -1103,18 +1105,21 @@ function DocsReaderPanel({
             <Icon name="GitBranch" className="size-3.5" />
           </Button>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {detailPane}
           {panelGraphOpen ? (
-            <div className="flex min-h-0 flex-1 flex-col border-t border-border" aria-label="그래프">
+            <FloatingGraphCard>
+              <Button type="button" variant="ghost" size="icon" aria-label="그래프 닫기" onClick={() => setGraphOpen(false)} className={cn("absolute left-2 top-2 z-30 size-6", COARSE_POINTER_ICON_BUTTON_GROW_CLASS)}>
+                <Icon name="X" className="size-3.5" />
+              </Button>
               {loadingGraph && graph === null ? (
-                <p className={cn("p-4 text-muted-foreground", COARSE_POINTER_TEXT_BASE_CLASS)}>그래프를 그리는 중…</p>
+                <p className={cn("p-4 pt-10 text-muted-foreground", COARSE_POINTER_TEXT_BASE_CLASS)}>그래프를 그리는 중…</p>
               ) : (
-                <GraphView nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} activePath={activePath} highlightPaths={highlightPaths} onOpen={(path) => {
+                <GraphView transparent documentMode nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} activePath={activePath} highlightPaths={highlightPaths} onOpen={(path) => {
                   if (vaultId !== null) goTo(vaultId, path);
                 }} />
               )}
-            </div>
+            </FloatingGraphCard>
           ) : null}
         </div>
       </div>
