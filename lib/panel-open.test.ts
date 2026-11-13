@@ -234,3 +234,49 @@ describe("graph highlight", () => {
     assert.equal(graphLabelHidden(0, -1, 0), false);
   });
 });
+
+describe("focus protocol", () => {
+  it("validates bounded input and round trips syntax-safe highlights", async () => {
+    const { focusPanelTarget, vaultFocusDirective, parseVaultFocusAttributes } = await import("./panel-open.ts");
+    const target = { vaultId: "notes", path: "folder/Beta.md", highlights: [{ text: '한글 "{x}"\n다음', occurrence: 2 }], graphPaths: [] };
+    const directive = vaultFocusDirective(target);
+    assert.ok(directive);
+    const payload = /payload="([^"]+)"/u.exec(directive)?.[1];
+    assert.deepEqual(parseVaultFocusAttributes({ payload: payload! }), target);
+    assert.equal(parseVaultFocusAttributes({ payload: "%broken" }), null);
+    assert.equal(focusPanelTarget({ ...target, highlights: Array(9).fill({ text: "x" }) }), null);
+    assert.equal(focusPanelTarget({ ...target, highlights: [{ text: "x".repeat(1001) }] }), null);
+    assert.equal(focusPanelTarget({ ...target, highlights: [{ text: "x", occurrence: 0 }] }), null);
+    assert.equal(focusPanelTarget({ ...target, extra: true }), null);
+  });
+
+  it("publishes one atomic request only after every path is valid", async () => {
+    const { focusVaultFile } = await import("./panel-open.ts");
+    const published: unknown[] = [];
+    const deps = { loadVaults: async () => [vaults[0]!], listEntries: async () => entries, publish: (x: unknown) => published.push(x), nonce: () => "n1" };
+    await focusVaultFile({ path: "Beta", highlights: [{ text: "hello" }], graphPaths: ["../bad"] }, { threadId: "thr_1" }, deps);
+    await focusVaultFile({ path: "pic.png", highlights: [{ text: "hello" }] }, { threadId: "thr_1" }, deps);
+    assert.equal(published.length, 0);
+    await focusVaultFile({ path: "Beta", highlights: [{ text: "hello" }], graphPaths: ["folder/Beta.md"] }, { threadId: "thr_1" }, deps);
+    assert.equal(published.length, 1);
+    assert.deepEqual(published[0], { threadId: "thr_1", action: "focus", vaultId: "notes", path: "folder/Beta.md", title: "Beta", nonce: "n1", highlights: [{ text: "hello" }], graphPaths: ["folder/Beta.md"] });
+  });
+});
+
+describe("focus tool schema", () => {
+  it("bounds highlights, occurrences and graph paths while preserving legacy tools", async () => {
+    const { registerVaultAgentTools } = await import("./agent-tools.ts");
+    const tools = new Map<string, any>();
+    registerVaultAgentTools({ agents: { registerTool: (tool: any) => tools.set(tool.name, tool) } } as any, { loadVaults: async () => [], listEntries: async () => [] });
+    assert.deepEqual([...tools.keys()], ["vault_focus_file", "vault_open_file", "vault_open_graph"]);
+    const schema = tools.get("vault_focus_file").parameters;
+    assert.equal(schema.safeParse({ path: "a.md", highlights: [{ text: '"한글"', occurrence: 2 }] }).success, true);
+    for (const bad of [
+      { path: "a.md", highlights: Array(9).fill({ text: "x" }) },
+      { path: "a.md", highlights: [{ text: "x".repeat(1001) }] },
+      { path: "a.md", highlights: [{ text: "x", occurrence: 10001 }] },
+      { path: "a.md", graphPaths: Array(41).fill("a.md") },
+      { path: "a.md", extra: true },
+    ]) assert.equal(schema.safeParse(bad).success, false);
+  });
+});

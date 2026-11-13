@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import {
   Markdown,
   definePluginApp,
   experimental_SourceCode as SourceCode,
   useBbNavigate,
   useRpc,
-  type PluginAppSlots,
   type PluginNavPanelProps,
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
@@ -13,12 +12,13 @@ import { toast } from "sonner";
 import * as Dialog from "@radix-ui/react-dialog";
 
 import { BrandIcon } from "@/components/BrandIcon";
+import { TextHighlights } from "@/components/TextHighlights";
 import { GraphView } from "@/components/GraphView";
 import { FloatingGraphCard } from "@/components/FloatingGraphCard";
 import { PanelOpenBridge } from "@/components/PanelOpenBridge";
 import { withPanelSplash } from "@/components/PanelSplash";
 import { useAgentSnapshot } from "@/components/use-agent-entry";
-import { VaultFileDirective, VaultGraphDirective } from "@/components/VaultDirective";
+import { VaultFileDirective, VaultGraphDirective, VaultFocusDirective } from "@/components/VaultDirective";
 import { DocViewToggle, type DocViewMode } from "@/components/DocViewToggle";
 import { DocumentEndSpace } from "@/components/DocumentEndSpace";
 import { FrontmatterPanel, PropertiesDock, PropertiesSheet, readFrontmatterOpen, storeFrontmatterOpen } from "@/components/FrontmatterPanel";
@@ -38,7 +38,7 @@ import {
   COARSE_POINTER_TREE_ICON_CLASS,
   COARSE_POINTER_TREE_ROW_SIZE_CLASS,
 } from "@/components/ui/coarse-pointer-sizing";
-import { consumeAgentRoute, consumeGraphOpen } from "@/lib/agent-entry";
+import { consumeAgentRoute, consumeGraphOpen, focusFor } from "@/lib/agent-entry";
 import { isImageFileName } from "@/lib/image-file";
 import { queryBoldSpans } from "@/lib/query-highlight";
 import { cn } from "@/lib/utils";
@@ -319,7 +319,8 @@ function DocsReaderPanel({
   subPath,
   onRoute,
   surface = "nav",
-}: PluginNavPanelProps & { onRoute?: (subPath: string) => void; surface?: "nav" | "panel" }) {
+  threadId = "",
+}: PluginNavPanelProps & { onRoute?: (subPath: string) => void; surface?: "nav" | "panel"; threadId?: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const chrome = useVaultChrome();
@@ -525,12 +526,13 @@ function DocsReaderPanel({
   const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set());
   const [graph, setGraph] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
-  const agent = useAgentSnapshot();
+  const agent = useAgentSnapshot(threadId);
   const loadedVaultRef = useRef<string | null>(null);
   const appliedNonceRef = useRef("");
 
   const vaultId = route.vaultId ?? vaults[0]?.id ?? null;
   const activePath = route.path;
+  const focus = isDesktopPanel && doc?.vaultId === vaultId && doc.path === activePath ? focusFor(threadId, vaultId, activePath) : null;
   const highlightPaths = vaultId === null ? EMPTY_HIGHLIGHTS : agent.lights[vaultId] ?? EMPTY_HIGHLIGHTS;
 
   useEffect(() => {
@@ -542,7 +544,18 @@ function DocsReaderPanel({
   }, []);
 
   useEffect(() => {
-    const pending = consumeAgentRoute();
+    if (agent.entry?.action === "focus" && !isDesktopPanel) return;
+    const pending = consumeAgentRoute(threadId);
+    if (pending?.action === "focus") {
+      const current = agent.entry;
+      if (current?.action === "focus") {
+        appliedNonceRef.current = current.nonce;
+        setViewMode("preview");
+        if (consumeGraphOpen(pending.vaultId, threadId)) setGraphOpen(true);
+      }
+      goToRef.current(pending.vaultId, pending.path);
+      return;
+    }
     if (pending?.action === "file") {
       appliedNonceRef.current = agent.entry?.nonce ?? appliedNonceRef.current;
       setGraphOpen(false);
@@ -559,8 +572,12 @@ function DocsReaderPanel({
       setGraph(null);
     }
     const current = agent.entry;
+    if (current?.action === "focus") {
+      if (consumeGraphOpen(vaultId, threadId)) setGraphOpen(true);
+      return;
+    }
     if (current?.action === "graph" && current.vaultId === vaultId) {
-      const fresh = consumeGraphOpen(vaultId);
+      const fresh = consumeGraphOpen(vaultId, threadId);
       if (fresh || (!switchedVault && current.nonce !== appliedNonceRef.current)) {
         appliedNonceRef.current = current.nonce;
         setGraphOpen(true);
@@ -575,7 +592,7 @@ function DocsReaderPanel({
       return;
     }
     if (switchedVault) setGraphOpen(false);
-  }, [agent.entry, vaultId]);
+  }, [agent.entry, vaultId, threadId, isDesktopPanel]);
 
   useEffect(() => {
     if ((!graphOpen && !graphPeek) || vaultId === null || graph !== null) return;
@@ -1033,12 +1050,12 @@ function DocsReaderPanel({
               ) : doc.kind === "markdown" && viewMode === "preview" ? (
                 <div className={cn("flex w-full justify-center px-4 pt-6 sm:px-8 sm:pt-8", COARSE_POINTER_MARKDOWN_BODY_CLASS)}>
                   <div className="w-full min-w-0 max-w-prose" onClickCapture={onWikiClick}>
-                    <Markdown content={markdown.body} />
+                    {isDesktopPanel ? <TextHighlights ranges={focus?.highlights ?? []} requestKey={focus?.nonce ?? ""}><Markdown content={markdown.body} /></TextHighlights> : <Markdown content={markdown.body} />}
                   </div>
                 </div>
               ) : doc.kind === "markdown" || doc.kind === "html" || doc.kind === "text" ? (
                 <div className="p-4">
-                  <SourceCode content={doc.content} path={doc.path} overflow="wrap" />
+                  {doc.kind !== "html" && isDesktopPanel ? <TextHighlights ranges={focus?.highlights ?? []} requestKey={focus?.nonce ?? ""}><SourceCode content={doc.content} path={doc.path} overflow="wrap" /></TextHighlights> : <SourceCode content={doc.content} path={doc.path} overflow="wrap" />}
                 </div>
               ) : (
                 <pre className={cn("whitespace-pre-wrap break-all p-4 font-mono leading-6", COARSE_POINTER_TEXT_BASE_CLASS)}>{doc.content}</pre>
@@ -1313,9 +1330,9 @@ function DocsReaderPanel({
 
 const VaultScreen = withPanelSplash("Vault", <BrandIcon className="size-9" />, DocsReaderPanel);
 
-function ThreadVaultPanel(_props: PluginThreadPanelProps) {
+function ThreadVaultPanel(props: PluginThreadPanelProps) {
   const [subPath, setSubPath] = useState(readSessionRoute);
-  return <VaultScreen subPath={subPath} onRoute={setSubPath} surface="panel" />;
+  return <VaultScreen subPath={subPath} onRoute={setSubPath} surface="panel" threadId={props.threadId} />;
 }
 
 export default definePluginApp((app) => {
@@ -1349,11 +1366,9 @@ export default definePluginApp((app) => {
     component: HiddenFilesSettings,
   });
 
+  app.slots.messageDirective({ id: "vault-focus", component: VaultFocusDirective });
   app.slots.messageDirective({ id: "vault-file", component: VaultFileDirective });
   app.slots.messageDirective({ id: "vault-graph", component: VaultGraphDirective });
 
-  const slots = app.slots as PluginAppSlots & {
-    experimental_appOverlay?: (registration: { id: string; component: ComponentType }) => void;
-  };
-  slots.experimental_appOverlay?.({ id: "panel-open", component: PanelOpenBridge });
+  app.slots.experimental_threadHeaderAction({ id: "panel-open", title: "Vault 표시 연결", component: PanelOpenBridge });
 });

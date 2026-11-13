@@ -4,6 +4,11 @@ export const GRAPH_ACTION_ID = "graph";
 export const VAULT_PANEL_PATH = "docs";
 export const THREAD_VAULT_ACTION_ID = "vault";
 export const MAX_HIGHLIGHT_PATHS = 40;
+export const MAX_TEXT_HIGHLIGHTS = 8;
+export const MAX_HIGHLIGHT_TEXT = 1000;
+export const MAX_OCCURRENCE = 10000;
+export type TextHighlight = { text: string; occurrence?: number };
+export type FocusTarget = { vaultId: string; path: string; highlights: TextHighlight[]; graphPaths?: string[] };
 
 const KNOWN_EXT = /\.(md|markdown|html|htm|txt)$/iu;
 const MARKDOWN_EXT = /\.(md|markdown)$/iu;
@@ -12,6 +17,7 @@ export type VaultChoice = { id: string; name: string };
 export type VaultFileEntry = { kind: "file" | "directory"; path: string; name: string };
 
 export type PanelOpenRequest =
+  | ({ threadId: string; action: "focus"; title: string; nonce: string } & FocusTarget)
   | {
       threadId: string;
       action: "file";
@@ -106,7 +112,7 @@ export function fileTitle(path: string): string {
   return clipTitle(stripKnownExt(basename(path)));
 }
 
-function defaultNonce(): string {
+export function newPanelNonce(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -252,6 +258,11 @@ export function parsePanelOpenRequest(value: unknown): PanelOpenRequest | null {
   if (threadId === "" || vaultId === "" || title === "" || title.length > 80 || nonce === "" || nonce.length > 80) {
     return null;
   }
+  if (value.action === "focus") {
+    if (Object.keys(value).some((key) => !["threadId", "action", "vaultId", "path", "title", "nonce", "highlights", "graphPaths"].includes(key))) return null;
+    const target = focusPanelTarget({ vaultId, path: value.path, highlights: value.highlights, ...(value.graphPaths === undefined ? {} : { graphPaths: value.graphPaths }) });
+    return target === null ? null : { threadId, action: "focus", ...target, title, nonce };
+  }
   if (value.action === "file" && typeof value.path === "string") {
     const path = normalizeVaultPath(value.path);
     if (path === null) return null;
@@ -268,8 +279,9 @@ export function parsePanelOpenRequest(value: unknown): PanelOpenRequest | null {
 export function panelOpenOptions(request: PanelOpenRequest): {
   actionId: string;
   title: string;
-  params: { vaultId: string; path: string } | { vaultId: string; paths: string[] };
+  params: { vaultId: string; path: string } | { vaultId: string; paths: string[] } | FocusTarget;
 } {
+  if (request.action === "focus") return { actionId: FILE_ACTION_ID, title: request.title, params: { vaultId: request.vaultId, path: request.path, highlights: request.highlights, ...(request.graphPaths === undefined ? {} : { graphPaths: request.graphPaths }) } };
   if (request.action === "file") {
     return {
       actionId: FILE_ACTION_ID,
@@ -325,7 +337,7 @@ export async function openVaultFile(
     vaultId: chosen.vault.id,
     path: file.path,
     title: clipTitle(file.name),
-    nonce: deps.nonce?.() ?? defaultNonce(),
+    nonce: deps.nonce?.() ?? newPanelNonce(),
   };
   deps.publish(request);
   return successText(
@@ -369,7 +381,7 @@ export async function openVaultGraph(
     vaultId: chosen.vault.id,
     paths: notes.paths,
     title: notes.paths.length === 0 ? "3D 그래프" : `그래프 · ${notes.paths.length}`,
-    nonce: deps.nonce?.() ?? defaultNonce(),
+    nonce: deps.nonce?.() ?? newPanelNonce(),
   };
   deps.publish(request);
   const listed = notes.paths.length === 0 ? "강조 없음" : notes.paths.join(", ");
@@ -402,4 +414,53 @@ export function releaseDirectiveOpen(storage: OpenClaimStorage, key: string): vo
   } catch {
     // Private mode can reject storage. The next mount may open the panel again.
   }
+}
+
+export function focusPanelTarget(value: unknown): FocusTarget | null {
+  if (!isRecord(value) || Object.keys(value).some((key) => !["vaultId", "path", "highlights", "graphPaths"].includes(key))) return null;
+  const file = filePanelTarget(value);
+  if (!file || file.vaultId.length > 256 || file.path.length > 4096) return null;
+  const input = value.highlights ?? [];
+  if (!Array.isArray(input) || input.length > MAX_TEXT_HIGHLIGHTS) return null;
+  const highlights: TextHighlight[] = [];
+  for (const item of input) {
+    if (!isRecord(item) || Object.keys(item).some((key) => !["text", "occurrence"].includes(key)) || typeof item.text !== "string" || item.text.length > MAX_HIGHLIGHT_TEXT || item.text.trim() === "") return null;
+    if (item.occurrence !== undefined && (!Number.isInteger(item.occurrence) || (item.occurrence as number) < 1 || (item.occurrence as number) > MAX_OCCURRENCE)) return null;
+    highlights.push({ text: item.text, ...(item.occurrence === undefined ? {} : { occurrence: item.occurrence as number }) });
+  }
+  const graphPaths = value.graphPaths === undefined ? undefined : readPaths(value.graphPaths);
+  if (graphPaths === null || graphPaths?.some((path) => path.length > 4096)) return null;
+  return { ...file, highlights, ...(graphPaths === undefined ? {} : { graphPaths }) };
+}
+
+export function vaultFocusDirective(target: FocusTarget): string | null {
+  if (!directiveSafe(target.vaultId) || !directiveSafe(target.path) || target.graphPaths?.some((path) => !directiveSafe(path))) return null;
+  return `::vault-focus{payload="${encodeURIComponent(JSON.stringify(target))}"}`;
+}
+
+export function parseVaultFocusAttributes(attributes: Readonly<Record<string, string>>): FocusTarget | null {
+  try {
+    const raw = attributes.payload;
+    if (!raw || raw.length > 600000) return null;
+    return focusPanelTarget(JSON.parse(decodeURIComponent(raw)));
+  } catch { return null; }
+}
+
+export async function focusVaultFile(input: { vaultId?: string; path: string; highlights?: TextHighlight[]; graphPaths?: string[] }, ctx: { threadId: string }, deps: OpenDeps): Promise<ToolText> {
+  if (!ctx.threadId.trim()) return toolError("이 호출에는 스레드가 없습니다.");
+  const parsed = focusPanelTarget({ vaultId: input.vaultId ?? "_", path: input.path, highlights: input.highlights, ...(input.graphPaths === undefined ? {} : { graphPaths: input.graphPaths }) });
+  if (!parsed) return toolError("focus 요청이 올바르지 않습니다.");
+  try {
+    const chosen = chooseVault(await deps.loadVaults(), input.vaultId);
+    if (!chosen.ok) return toolError(chosen.message);
+    const entries = await deps.listEntries(chosen.vault.id);
+    const file = resolveFilePath(entries, parsed.path);
+    if (!file.ok) return toolError(file.message);
+    if (parsed.highlights.length && !/\.(md|markdown|txt)$/iu.test(file.path)) return toolError("텍스트 강조는 Markdown과 텍스트 파일에서만 지원합니다.");
+    const graph = parsed.graphPaths === undefined ? undefined : resolveGraphPaths(entries, parsed.graphPaths);
+    if (graph && !graph.ok) return toolError(graph.message);
+    const target: FocusTarget = { vaultId: chosen.vault.id, path: file.path, highlights: parsed.highlights, ...(graph?.ok ? { graphPaths: graph.paths } : {}) };
+    deps.publish({ threadId: ctx.threadId, action: "focus", ...target, title: clipTitle(file.name), nonce: deps.nonce?.() ?? newPanelNonce() });
+    return successText(["오른쪽 패널의 Vault에서 파일과 강조 표시를 요청했습니다.", `볼트: ${chosen.vault.name} (${chosen.vault.id})`, `파일: ${file.path}`], vaultFocusDirective(target));
+  } catch (cause) { return toolError(cause instanceof Error ? cause.message : "볼트 목록을 읽지 못했습니다."); }
 }

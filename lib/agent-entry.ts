@@ -1,8 +1,9 @@
-import { VAULT_PANEL_PATH, type PanelOpenRequest } from "./panel-open.ts";
+import { VAULT_PANEL_PATH, type PanelOpenRequest, type TextHighlight } from "./panel-open.ts";
 
 const VAULT_DOCS_MARKER = "/plugins/vault/docs";
 
 export type AgentEntry =
+  | { action: "focus"; threadId: string; vaultId: string; path: string; highlights: TextHighlight[]; graphPaths?: string[]; nonce: string }
   | {
       action: "file";
       threadId: string;
@@ -23,12 +24,16 @@ export type AgentSnapshot = {
   lights: Readonly<Record<string, readonly string[]>>;
 };
 
-type PendingRoute = { action: "file" | "graph"; vaultId: string; path: string };
+type PendingRoute = { action: "file" | "graph" | "focus"; vaultId: string; path: string };
 
-let entry: AgentEntry | null = null;
-let armedVaultId: string | null = null;
-let pendingRoute: PendingRoute | null = null;
-const lights = new Map<string, readonly string[]>();
+type ThreadState = { entry: AgentEntry | null; focus: Extract<AgentEntry, { action: "focus" }> | null; armedVaultId: string | null; pendingRoute: PendingRoute | null; lights: Map<string, readonly string[]> };
+const states = new Map<string, ThreadState>();
+let lastThread = "";
+function state(threadId: string): ThreadState {
+  let current = states.get(threadId);
+  if (!current) { current = { entry: null, focus: null, armedVaultId: null, pendingRoute: null, lights: new Map() }; states.set(threadId, current); }
+  return current;
+}
 const listeners = new Set<() => void>();
 
 function publish(): void {
@@ -58,24 +63,13 @@ function vaultDocsRest(pathname: string): string | null {
   return rest.split("/").map(decodeSegment).join("/");
 }
 
-export function resetAgentEntry(): void {
-  entry = null;
-  armedVaultId = null;
-  pendingRoute = null;
-  lights.clear();
-  publish();
-}
-
-export function readAgentEntry(): AgentEntry | null {
-  return entry;
-}
-
-export function highlightPathsFor(vaultId: string): readonly string[] {
-  return lights.get(vaultId) ?? [];
-}
-
-export function readAgentSnapshot(): AgentSnapshot {
-  return { entry, lights: Object.fromEntries(lights) };
+export function resetAgentEntry(): void { states.clear(); lastThread = ""; publish(); }
+export function readAgentEntry(threadId = lastThread): AgentEntry | null { return state(threadId).entry; }
+export function highlightPathsFor(vaultId: string, threadId = lastThread): readonly string[] { return state(threadId).lights.get(vaultId) ?? []; }
+export function readAgentSnapshot(threadId = lastThread): AgentSnapshot { const current = state(threadId); return { entry: current.entry, lights: Object.fromEntries(current.lights) }; }
+export function focusFor(threadId: string, vaultId: string | null, path: string): Extract<AgentEntry, { action: "focus" }> | null {
+  const focus = state(threadId).focus;
+  return focus && focus.vaultId === vaultId && focus.path === path ? focus : null;
 }
 
 export function subscribeAgentEntry(listener: () => void): () => void {
@@ -97,44 +91,36 @@ export function mergeHighlightPaths(existing: readonly string[], incoming: reado
 }
 
 export function applyAgentEntry(request: PanelOpenRequest): AgentEntry {
-  if (request.action === "file") {
-    armedVaultId = null;
-    pendingRoute = { action: "file", vaultId: request.vaultId, path: request.path };
-    entry = {
-      action: "file",
-      threadId: request.threadId,
-      vaultId: request.vaultId,
-      path: request.path,
-      nonce: request.nonce,
-    };
-    publish();
-    return entry;
+  lastThread = request.threadId;
+  const current = state(request.threadId);
+  if (request.action === "focus") {
+    if (request.graphPaths !== undefined) current.lights.set(request.vaultId, request.graphPaths);
+    current.focus = { ...request };
+    current.entry = current.focus;
+    if (request.graphPaths !== undefined || current.armedVaultId !== null) current.armedVaultId = request.vaultId;
+    current.pendingRoute = { action: "focus", vaultId: request.vaultId, path: request.path };
+  } else if (request.action === "file") {
+    current.focus = null;
+    current.armedVaultId = null;
+    current.pendingRoute = { action: "file", vaultId: request.vaultId, path: request.path };
+    current.entry = { ...request };
+  } else {
+    const merged = mergeHighlightPaths(current.lights.get(request.vaultId) ?? [], request.paths);
+    current.lights.set(request.vaultId, merged);
+    current.armedVaultId = request.vaultId;
+    current.pendingRoute = { action: "graph", vaultId: request.vaultId, path: "" };
+    current.entry = { ...request, paths: merged };
   }
-  const merged = mergeHighlightPaths(lights.get(request.vaultId) ?? [], request.paths);
-  lights.set(request.vaultId, merged);
-  armedVaultId = request.vaultId;
-  pendingRoute = { action: "graph", vaultId: request.vaultId, path: "" };
-  entry = {
-    action: "graph",
-    threadId: request.threadId,
-    vaultId: request.vaultId,
-    paths: merged,
-    nonce: request.nonce,
-  };
   publish();
-  return entry;
+  return current.entry;
 }
-
-export function consumeAgentRoute(): PendingRoute | null {
-  const next = pendingRoute;
-  pendingRoute = null;
-  return next;
+export function consumeAgentRoute(threadId = lastThread): PendingRoute | null {
+  const current = state(threadId); const next = current.pendingRoute; current.pendingRoute = null; return next;
 }
-
-export function consumeGraphOpen(vaultId: string | null): boolean {
-  if (vaultId === null || armedVaultId !== vaultId) return false;
-  armedVaultId = null;
-  return true;
+export function consumeGraphOpen(vaultId: string | null, threadId = lastThread): boolean {
+  const current = state(threadId);
+  if (vaultId === null || current.armedVaultId !== vaultId) return false;
+  current.armedVaultId = null; return true;
 }
 
 export function vaultPanelSubPath(next: AgentEntry): string {
@@ -145,7 +131,7 @@ export function vaultPanelSubPath(next: AgentEntry): string {
 export function shouldEnterVaultRoute(pathname: string, next: AgentEntry): boolean {
   const rest = vaultDocsRest(pathname);
   if (rest === null) return true;
-  if (next.action === "file") return rest !== vaultPanelSubPath(next);
+  if (next.action === "file" || next.action === "focus") return rest !== vaultPanelSubPath(next);
   return !(rest === next.vaultId || rest.startsWith(`${next.vaultId}/`));
 }
 

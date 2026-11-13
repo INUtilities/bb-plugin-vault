@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   MAX_HIGHLIGHT_PATHS,
+  MAX_TEXT_HIGHLIGHTS, MAX_HIGHLIGHT_TEXT, MAX_OCCURRENCE,
+  focusVaultFile,
   PANEL_OPEN_CHANNEL,
   openVaultFile,
   openVaultGraph,
@@ -24,6 +26,13 @@ const graphParameters = z
   })
   .strict();
 
+const focusParameters = z.object({
+  vaultId: z.string().min(1).max(256).optional(),
+  path: z.string().min(1).max(4096),
+  highlights: z.array(z.object({ text: z.string().min(1).max(MAX_HIGHLIGHT_TEXT), occurrence: z.number().int().min(1).max(MAX_OCCURRENCE).optional() }).strict()).max(MAX_TEXT_HIGHLIGHTS).optional(),
+  graphPaths: z.array(z.string().min(1).max(4096)).max(MAX_HIGHLIGHT_PATHS).optional(),
+}).strict();
+
 export function registerVaultAgentTools(
   bb: BbPluginApi,
   deps: Pick<OpenDeps, "loadVaults" | "listEntries">,
@@ -34,6 +43,15 @@ export function registerVaultAgentTools(
     publish: (payload: PanelOpenRequest) => {
       bb.realtime.publish(PANEL_OPEN_CHANNEL, payload);
     },
+  });
+
+  bb.agents.registerTool({
+    name: "vault_focus_file",
+    description: "Request a file, text highlights, and optional graph marks in this thread's Vault panel.",
+    instructions: "이 스레드의 Vault 패널에서 파일과 문구 강조를 요청한다. highlights는 보이는 연속 텍스트이며 occurrence는 1부터 시작한다. graphPaths를 지정하면 그래프 표시를 교체한다. 성공하면 반환된 ::vault-focus 지시문 한 줄을 답변에 그대로 포함한다.",
+    presentation: { label: { pending: "볼트 표시 요청 중", completed: "볼트 표시를 요청했습니다" } },
+    parameters: focusParameters,
+    async execute(params, ctx) { return focusVaultFile(params, { threadId: ctx.threadId }, openDeps()); },
   });
 
   bb.agents.registerTool({

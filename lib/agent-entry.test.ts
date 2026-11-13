@@ -85,3 +85,49 @@ describe("agent entry", () => {
     assert.equal(vaultNavigationFor(encoded, hangul), null);
   });
 });
+
+describe("focus state", () => {
+  it("isolates threads, replaces lights, and only highlights the matching file", async () => {
+    const { focusFor, readAgentSnapshot } = await import("./agent-entry.ts");
+    resetAgentEntry();
+    const a = { threadId: "thr_1", action: "focus" as const, vaultId: "notes", path: "a.md", title: "a", nonce: "one", highlights: [{ text: "hello" }], graphPaths: ["a.md"] };
+    applyAgentEntry(a);
+    applyAgentEntry({ ...a, threadId: "thr_2", path: "b.md", graphPaths: ["b.md"] });
+    assert.deepEqual(readAgentSnapshot("thr_1").lights.notes, ["a.md"]);
+    assert.deepEqual(readAgentSnapshot("thr_2").lights.notes, ["b.md"]);
+    assert.equal(focusFor("thr_1", "notes", "b.md"), null);
+    assert.equal(focusFor("thr_1", "other", "a.md"), null);
+    assert.equal(focusFor("thr_1", "notes", "a.md")?.nonce, "one");
+    applyAgentEntry({ ...a, nonce: "repeat", graphPaths: undefined });
+    assert.deepEqual(readAgentSnapshot("thr_1").lights.notes, ["a.md"]);
+    assert.equal(focusFor("thr_1", "notes", "a.md")?.nonce, "repeat");
+    applyAgentEntry({ ...a, nonce: "two", graphPaths: [] });
+    assert.equal(focusFor("thr_1", "notes", "a.md")?.nonce, "two");
+    assert.deepEqual(readAgentSnapshot("thr_1").lights.notes, []);
+    applyAgentEntry(file("three"));
+    assert.equal(focusFor("thr_1", "notes", "a.md"), null);
+  });
+});
+
+it("preserves a pending graph open across an offscreen focus without graphPaths", () => {
+  resetAgentEntry();
+  applyAgentEntry({ threadId: "thr_1", action: "focus", vaultId: "notes", path: "a.md", title: "a", nonce: "one", highlights: [], graphPaths: ["a.md"] });
+  applyAgentEntry({ threadId: "thr_1", action: "focus", vaultId: "notes", path: "b.md", title: "b", nonce: "two", highlights: [] });
+  assert.deepEqual(highlightPathsFor("notes", "thr_1"), ["a.md"]);
+  assert.equal(consumeGraphOpen("notes", "thr_1"), true);
+  assert.equal(consumeGraphOpen("notes", "thr_1"), false);
+});
+
+it("keeps pending graph intents isolated and clears them for a plain file open", () => {
+  resetAgentEntry();
+  const first = { threadId: "thr_1", action: "focus" as const, vaultId: "notes", path: "a.md", title: "a", nonce: "one", highlights: [], graphPaths: [] };
+  applyAgentEntry(first);
+  applyAgentEntry({ ...first, threadId: "thr_2", nonce: "two" });
+  applyAgentEntry({ ...first, vaultId: "other", path: "b.md", nonce: "three", graphPaths: undefined });
+  assert.equal(consumeGraphOpen("notes", "thr_1"), false);
+  assert.equal(consumeGraphOpen("other", "thr_1"), true);
+  assert.equal(consumeGraphOpen("notes", "thr_2"), true);
+  applyAgentEntry(first);
+  applyAgentEntry(file("plain"));
+  assert.equal(consumeGraphOpen("notes", "thr_1"), false);
+});

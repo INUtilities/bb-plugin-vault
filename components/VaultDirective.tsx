@@ -5,8 +5,10 @@ import { applyAgentEntry } from "@/lib/agent-entry";
 import {
   THREAD_VAULT_ACTION_ID,
   fileTitle,
+  newPanelNonce,
   parseVaultFileAttributes,
   parseVaultGraphAttributes,
+  parseVaultFocusAttributes,
   type PanelOpenRequest,
 } from "@/lib/panel-open";
 
@@ -21,7 +23,7 @@ function OpenChip({
   const requestRef = useRef(request);
   requestRef.current = request;
   function enter() {
-    applyAgentEntry(requestRef.current);
+    applyAgentEntry({ ...requestRef.current, nonce: newPanelNonce() });
     navigate.openThreadPanel({ actionId: THREAD_VAULT_ACTION_ID, title: "Vault" });
   }
   return (
@@ -66,4 +68,11 @@ export function VaultGraphDirective({ attributes, source, message }: PluginMessa
   return (
     <OpenChip label={title} request={request} />
   );
+}
+
+export function VaultFocusDirective({ attributes, source, message }: PluginMessageDirectiveProps) {
+  const target = parseVaultFocusAttributes(attributes);
+  if (target === null) return <span>{source}</span>;
+  const request: PanelOpenRequest = { threadId: message.threadId, action: "focus", ...target, title: fileTitle(target.path), nonce: `directive:${message.id}` };
+  return <OpenChip label={request.title} request={request} />;
 }
