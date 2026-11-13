@@ -56,6 +56,7 @@ import { readSessionRoute, writeSessionRoute } from "@/lib/session-route";
 import { rewriteVaultMarkdown } from "@/lib/vault-markdown";
 import { graphCornerCursor, graphCornerResize } from "@/lib/graph-corner";
 import type { GraphEdge, GraphNode } from "@/lib/note-graph";
+import { htmlPreviewUrl } from "@/lib/preview-url";
 import { parseVaultLinkHref } from "@/lib/wiki-links";
 import type { rpcContract } from "./server";
 
@@ -517,7 +518,9 @@ function DocsReaderPanel({
   const [loadingVaults, setLoadingVaults] = useState(() => rememberedVaults().length === 0);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [loadingDoc, setLoadingDoc] = useState(false);
-  const [previewBaseUrl, setPreviewBaseUrl] = useState<string | null>(null);
+  const [previewRoot, setPreviewRoot] = useState<{ vaultId: string; baseUrl: string; expiresAtMs: number } | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewRetry, setPreviewRetry] = useState(0);
   const [viewMode, setViewMode] = useState<DocViewMode>("preview");
   const [graphOpen, setGraphOpen] = useState(false);
   const [graphPeek, setGraphPeek] = useState(!isDesktopPanel);
@@ -532,7 +535,9 @@ function DocsReaderPanel({
   const appliedNonceRef = useRef("");
 
   const vaultId = route.vaultId ?? vaults[0]?.id ?? null;
+  const previewBaseUrl = previewRoot?.vaultId === vaultId ? previewRoot.baseUrl : null;
   const activePath = route.path;
+  const htmlSrc = doc?.kind === "html" ? htmlPreviewUrl(previewRoot, doc, { vaultId, path: activePath }) : null;
   const focus = isDesktopPanel && doc?.vaultId === vaultId && doc.path === activePath ? focusFor(threadId, vaultId, activePath) : null;
   const highlightPaths = vaultId === null ? EMPTY_HIGHLIGHTS : agent.lights[vaultId] ?? EMPTY_HIGHLIGHTS;
 
@@ -718,22 +723,33 @@ function DocsReaderPanel({
 
   useEffect(() => {
     if (vaultId === null) {
-      setPreviewBaseUrl(null);
+      setPreviewRoot(null);
       return;
     }
     let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    setPreviewError(null);
     void rpc
       .call("previewRoot", { vaultId })
       .then((result) => {
-        if (!cancelled) setPreviewBaseUrl(result.baseUrl);
+        if (cancelled) return;
+        setPreviewRoot(result);
+        refreshTimer = setTimeout(() => {
+          setPreviewRoot(current => current && current.expiresAtMs <= Date.now() ? null : current);
+          setPreviewRetry(value => value + 1);
+        }, Math.max(1000, result.expiresAtMs - Date.now() - 15_000));
       })
       .catch(() => {
-        if (!cancelled) setPreviewBaseUrl(null);
+        if (!cancelled) {
+          setPreviewRoot(null);
+          setPreviewError(vaultId);
+        }
       });
     return () => {
       cancelled = true;
+      clearTimeout(refreshTimer);
     };
-  }, [rpc, vaultId]);
+  }, [rpc, vaultId, activePath, previewRetry]);
 
   useEffect(() => {
     const remembered = rememberedVaults();
@@ -1042,12 +1058,23 @@ function DocsReaderPanel({
             ) : (
             <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
               {doc.kind === "html" && viewMode === "preview" ? (
-                <iframe
-                  title={doc.name}
-                  sandbox=""
-                  srcDoc={doc.content}
-                  className="m-4 h-full min-h-[24rem] w-[calc(100%-2rem)] rounded-md border border-border bg-background"
-                />
+                htmlSrc !== null ? <div className="m-4 flex min-h-[24rem] flex-1 flex-col">
+                  <div className="mb-1 flex justify-end">
+                    <Button variant="ghost" size="icon" aria-label="HTML 미리보기 새로고침" onClick={() => { setPreviewRoot(null); setPreviewRetry(value => value + 1); }}>
+                      <Icon name="RotateCcw" className="size-4" />
+                    </Button>
+                  </div>
+                  <iframe
+                    title={doc.name}
+                    sandbox="allow-scripts"
+                    src={htmlSrc}
+                    onError={() => { setPreviewRoot(null); setPreviewError(vaultId); }}
+                    className="h-full min-h-[24rem] w-full flex-1 rounded-md border border-border bg-background"
+                  />
+                </div> : <div role={previewError === vaultId ? "alert" : "status"} className="m-4 flex flex-col items-start gap-2 text-sm text-muted-foreground">
+                  <p>{previewError === vaultId ? "HTML 미리보기를 불러오지 못했습니다." : "HTML 미리보기를 불러오는 중…"}</p>
+                  {previewError === vaultId ? <Button variant="outline" size="sm" onClick={() => setPreviewRetry(value => value + 1)}>다시 시도</Button> : null}
+                </div>
               ) : doc.kind === "markdown" && viewMode === "preview" ? (
                 <div className={cn("flex w-full justify-center px-4 pt-6 sm:px-8 sm:pt-8", COARSE_POINTER_MARKDOWN_BODY_CLASS)}>
                   <div className="w-full min-w-0 max-w-prose" onClickCapture={onWikiClick}>

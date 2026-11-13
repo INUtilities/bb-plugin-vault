@@ -45,6 +45,20 @@ Plugin id: `vault`.
 
 Registers `navPanel` `docs`, `threadPanelAction`, a settings section, and message directives in `app.tsx`. Agents can also open the thread panel through plugin tools.
 
+## 문서 미리보기
+
+Markdown은 BB SDK의 `Markdown`으로 렌더링한다. 현재 BB renderer가 제공하는
+인라인·블록 수식을 그대로 사용하며, 수식 앞뒤의 목록·굵게·링크 구조와 코드 영역을 보존한다.
+
+HTML은 파일의 preview URL로 열어 같은 폴더의 CSS·이미지·JavaScript를 불러온다.
+iframe은 `allow-scripts`만 허용하고 `allow-same-origin`은 허용하지 않는다.
+파일을 바꾸거나 URL 만료가 가까워지면 preview URL을 다시 확인한다.
+URL 발급에 실패하면 다시 시도할 수 있으며, 열린 HTML은 새로고침 버튼으로 다시 불러올 수 있다.
+
+페이지 그래프는 선택된 노드가 있어도 hover한 다른 노드의 이름을 먼저 표시한다.
+데스크탑 스레드 패널의 그래프는 현재 파일 이름만 표시한다. 노드의 선택 반경은
+pointer에서 최소 18px, 큰 터치 영역에서는 최소 28px다.
+
 ## 스레드에서 파일과 문구 표시
 
 `vault_focus_file`은 호출한 스레드의 데스크탑 오른쪽 Vault 패널에 파일 표시를 요청한다.
