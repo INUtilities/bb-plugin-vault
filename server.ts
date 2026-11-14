@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
+import { chatConnectionSchema, createChatConnectionStore } from "./lib/chat-connection-store";
 import { registerVaultAgentTools } from "./lib/agent-tools";
 import { entryIsHidden } from "./lib/hidden-files";
 import { buildNoteGraph } from "./lib/note-graph";
@@ -30,7 +31,16 @@ const entrySchema = z
 
 const vaultsOutput = z.object({ vaults: z.array(vaultSchema) }).strict();
 
+const chatProjectSchema = z.string().min(1).max(200).nullable();
 export const rpcContract = defineRpcContract({
+  readChatConnection: {
+    input: z.object({ projectId: chatProjectSchema }).strict(),
+    output: chatConnectionSchema.nullable(),
+  },
+  writeChatConnection: {
+    input: z.object({ projectId: chatProjectSchema, threadId: z.string().min(1).max(200).nullable(), onlyIfMissing: z.boolean().optional() }).strict(),
+    output: chatConnectionSchema,
+  },
   listVaults: {
     input: z.null(),
     output: vaultsOutput,
@@ -349,6 +359,7 @@ function seedSortOrder(db: PluginDb): void {
 }
 
 export default async function plugin(bb: BbPluginApi) {
+  const chatConnections = createChatConnectionStore(bb.storage.kv, projectId => bb.realtime.publish("vault/chat-connection", { projectId }));
   const db = bb.storage.database();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS vaults (
@@ -462,6 +473,8 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.rpc.register(rpcContract, {
+    async readChatConnection({ projectId }) { return chatConnections.read(projectId); },
+    async writeChatConnection({ projectId, threadId, onlyIfMissing }) { return chatConnections.write(projectId, threadId, onlyIfMissing); },
     async listVaults() {
       return { vaults: await loadVaults() };
     },

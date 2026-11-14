@@ -5,15 +5,30 @@ export function createChatSession(storage?: ChatStorage) {
   const connected = new Map<string, string | null>();
   const pending = new Map<string, Promise<void>>();
   const listeners = new Set<() => void>();
-  const connect = (key: string, id: string | null) => {
+  const writers = new Map<string, Set<(id: string | null) => void>>();
+  const receive = (key: string, id: string | null) => {
     connected.set(key, id);
-    try { if (id) storage?.setItem(key, id); else storage?.removeItem(key); } catch { /* Memory only. */ }
+    try { storage?.setItem(key, id ?? ""); } catch { /* Memory only. */ }
     listeners.forEach(listener => listener());
   };
+  const connect = (key: string, id: string | null) => {
+    receive(key, id);
+    writers.get(key)?.values().next().value?.(id);
+  };
   return {
+    receive,
+    hasCache(key: string) {
+      if (connected.has(key)) return true;
+      try { return storage?.getItem(key) != null; } catch { return false; }
+    },
+    registerWriter(key: string, writer: (id: string | null) => void) {
+      const group = writers.get(key) ?? new Set();
+      group.add(writer); writers.set(key, group);
+      return () => { group.delete(writer); if (!group.size) writers.delete(key); };
+    },
     read(key: string): string | null {
       if (connected.has(key)) return connected.get(key) ?? null;
-      try { return storage?.getItem(key) ?? null; } catch { return null; }
+      try { return storage?.getItem(key) || null; } catch { return null; }
     },
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     connect,
@@ -21,7 +36,8 @@ export function createChatSession(storage?: ChatStorage) {
       const existing = pending.get(key);
       if (existing) return existing;
       // Preserve the native selections; panel conversations start hidden from the thread list.
-      const operation = spawn({ ...request, visibility: "hidden" }).then(thread => { connect(key, thread.id); }).finally(() => { pending.delete(key); });
+      const writer = writers.get(key)?.values().next().value;
+      const operation = spawn({ ...request, visibility: "hidden" }).then(thread => { receive(key, thread.id); writer?.(thread.id); }).finally(() => { pending.delete(key); });
       pending.set(key, operation);
       return operation;
     },

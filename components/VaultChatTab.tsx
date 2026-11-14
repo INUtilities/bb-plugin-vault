@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { experimental_NewThreadComposer as NewThreadComposer, experimental_useSidebarThreads, ThreadChat, useBbContext, useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
 import { chatKey, resolveChatSeeds, vaultChatSession, type ChatSeeds } from "@/lib/vault-chat";
+import { useVaultChatSync } from "@/lib/vault-chat-sync";
 import { useVaultHeaderAlignment } from "@/lib/vault-header-alignment";
 import { useVaultChrome } from "@/lib/use-vault-chrome";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,7 @@ function VaultConversation({ scopeKey, context, threadId }: {
   const sdkRef = useRef(sdk);
   sdkRef.current = sdk;
   const { threads } = experimental_useSidebarThreads();
+  const sync = useVaultChatSync(context.projectId);
   const root = useRef<HTMLDivElement>(null);
   useVaultHeaderAlignment(root);
   const large = useVaultChrome().hitTarget === "large";
@@ -58,13 +60,17 @@ function VaultConversation({ scopeKey, context, threadId }: {
   return <div ref={root} className="vault-chat flex h-full min-h-0 min-w-0 flex-col">
     <div className="vault-chat-header flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
       <span className="min-w-0 flex-1 truncate">{threadId ? thread?.displayTitle ?? "Chat" : "New chat"}</span>
-      <button type="button" aria-label="New chat" title="New chat" disabled={!threadId || isOpening} className={actionClass}
+      <button type="button" aria-label="New chat" title="New chat" disabled={!sync.ready || !threadId || isOpening} className={actionClass}
         onClick={() => { setError(null); vaultChatSession.connect(scopeKey, null); }}><Icon name="MessageSquarePlus" aria-hidden className="size-3.5" /></button>
-      <button type="button" aria-label="Open thread" title="Open thread" disabled={!threadId || isOpening} aria-busy={isOpening || undefined}
+      <button type="button" aria-label="Open thread" title="Open thread" disabled={!sync.ready || !threadId || isOpening} aria-busy={isOpening || undefined}
         className={actionClass} onClick={() => void openThread()}><Icon name="ExternalLink" aria-hidden className="size-3.5" /></button>
     </div>
     {error ? <p role="alert" className="px-3 pt-2 text-xs text-destructive">{error}</p> : null}
-    {threadId ? <ThreadChat key={threadId} threadId={threadId} variant={thread?.isArchived ? "timeline" : "compact"} permissionPolicy="inherit" className="min-h-0 flex-1" />
+    {sync.error ? <div role="alert" className="px-3 pt-2 text-xs text-destructive">
+      <p>{sync.error}</p>
+      <button type="button" className="mt-1 rounded-md px-2 py-1 text-foreground hover:bg-state-hover" onClick={() => void sync.retry()}>연결 동기화 재시도</button>
+    </div> : null}
+    {!sync.ready ? <p role="status" className="p-3 text-xs text-muted-foreground">채팅 연결 불러오는 중…</p> : threadId ? <ThreadChat key={threadId} threadId={threadId} variant={thread?.isArchived ? "timeline" : "compact"} permissionPolicy="inherit" className="min-h-0 flex-1" />
       : seeds ? <NewThreadComposer {...seeds} draftKey={`${scopeKey}:draft`} layout="contained" placeholder="대화를 시작하세요…" onSubmit={submit} className="min-h-0 min-w-0 flex-1 px-4 pb-4 pt-2" />
         : <p role="status" className="p-3 text-xs text-muted-foreground">불러오는 중…</p>}
   </div>;

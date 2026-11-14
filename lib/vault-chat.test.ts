@@ -66,3 +66,15 @@ describe("Vault chat metadata boundary", () => {
     assert.deepEqual(await resolveChatSeeds({ projects: { get: async () => { throw Error("offline"); } } } as never, { projectId: "p1", threadId: null }), {});
   });
 });
+
+it("does not echo remote updates and saves a successful late spawn after its view unmounts", async () => {
+  const chat = createChatSession(); const saved: unknown[] = [];
+  const unregister = chat.registerWriter("one", id => { saved.push(id); });
+  chat.receive("one", "remote"); assert.deepEqual(saved, []);
+  chat.connect("one", null); assert.deepEqual(saved, [null]);
+  let finish!: (thread: { id: string }) => void;
+  const operation = chat.submit("one", {}, () => new Promise(resolve => { finish = resolve; }));
+  unregister(); finish({ id: "already-created" }); await operation;
+  assert.deepEqual(saved, [null, "already-created"]);
+  assert.equal(chat.read("one"), "already-created");
+});
